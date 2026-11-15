@@ -69,6 +69,7 @@ public class PrayerScheduler {
             editor.putInt("min_" + names[i], minutes[i]);
         }
         editor.apply();
+        PrayerTurnsProvider.changed(ctx);
 
         if (ctx.getResources().getBoolean(R.bool.reminders)) {
             scheduleNext(ctx);

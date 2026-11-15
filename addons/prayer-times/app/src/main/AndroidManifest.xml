@@ -17,6 +17,13 @@
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
         android:allowBackup="false">
 
+        <!-- The line under the clock (docs/modules.md, game_day). The launcher only reads it. -->
+        <meta-data android:name="com.gathin.tvhome.games" android:value="com.majnioui.tv.prayer.times" />
+        <provider
+            android:name=".PrayerTurnsProvider"
+            android:authorities="com.majnioui.tv.prayer.times"
+            android:exported="true" />
+
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
