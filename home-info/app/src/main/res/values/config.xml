@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Iselin, NJ. The same place the prayer times use. -->
+    <string name="latitude" translatable="false">40.5754</string>
+    <string name="longitude" translatable="false">-74.3224</string>
+    <string name="place" translatable="false">Iselin, NJ</string>
+    <!-- false shows Celsius and km/h, as in the reference picture. -->
+    <bool name="weather_fahrenheit">true</bool>
+    <!-- Public Google holiday calendars, one per line: "Name|https://…ics".
+         The first line is the top row, the second the middle. Today's Hijri date is the bottom row. -->
+    <string-array name="calendar_feeds" translatable="false">
+        <item>US|https://calendar.google.com/calendar/ical/en.usa%23holiday%40group.v.calendar.google.com/public/basic.ics</item>
+        <item>India|https://calendar.google.com/calendar/ical/en.indian%23holiday%40group.v.calendar.google.com/public/basic.ics</item>
+    </string-array>
+</resources>

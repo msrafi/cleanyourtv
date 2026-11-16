@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Home info</string>
+    <string name="blurb">Weather and the next event show beside the clock on Home. Nothing else in this app is meant to be opened.</string>
+</resources>

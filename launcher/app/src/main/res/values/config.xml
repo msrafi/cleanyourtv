@@ -30,6 +30,8 @@
         <item>com.tcl.tv</item>
         <item>com.tcl.ui_mediaCenter</item>
         <item>com.tcl.partnercustomizer</item>
+        <!-- The weather and calendar strip. It is not a tile; Home reads it beside the clock. -->
+        <item>com.msrafi.homeinfo</item>
     </string-array>
 
     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
