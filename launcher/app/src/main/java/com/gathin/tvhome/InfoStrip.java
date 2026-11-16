@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Weather and three calendar rows beside the clock. Home only reads a row published by
+ * Weather, three calendar rows and today's prayer times beside the clock. Home only reads a row published by
  * com.msrafi.homeinfo. Nothing here opens a connection. The strip stays hidden until that app is installed.
  */
 final class InfoStrip {
@@ -32,8 +32,9 @@ final class InfoStrip {
     static final String META = "com.gathin.tvhome.info";
     private static final String[] COLUMNS = {
             "symbol", "temperature", "condition", "feels", "place", "metrics",
-            "event_kicker", "event_title", "event_when"
+            "event_kicker", "event_title", "event_when", "prayers"
     };
+    private static final int PRAYER_ROWS = 6;
     private static final long REREAD_MS = 60_000L;
 
     private final Context ctx;
@@ -59,6 +60,9 @@ final class InfoStrip {
     private final TextView kicker;
     private final TextView title;
     private final TextView when;
+    private final LinearLayout prayers;
+    private final TextView[] prayerName = new TextView[PRAYER_ROWS];
+    private final TextView[] prayerTime = new TextView[PRAYER_ROWS];
     private final LinearLayout strip;
     private boolean watching;
 
@@ -109,16 +113,43 @@ final class InfoStrip {
         copy.addView(when);
         event.addView(copy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
+        prayers = row(activity, density);
+        LinearLayout.LayoutParams prayerBar = barParams(density);
+        prayerBar.height = dp(density, 112);
+        prayerBar.setMarginStart(dp(density, 8));
+        prayers.addView(bar(activity), prayerBar);
+        LinearLayout prayerList = column(activity);
+        for (int i = 0; i < PRAYER_ROWS; i++) {
+            LinearLayout line = new LinearLayout(activity);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            line.setGravity(Gravity.CENTER_VERTICAL);
+            prayerName[i] = text(activity, 13, 0xA6FFFFFF);
+            prayerName[i].setMinWidth(dp(density, 64));
+            prayerTime[i] = text(activity, 13, 0xE6FFFFFF);
+            line.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            line.addView(prayerName[i]);
+            LinearLayout.LayoutParams timeParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            timeParams.setMarginStart(dp(density, 8));
+            line.addView(prayerTime[i], timeParams);
+            prayerList.addView(line);
+        }
+        prayers.addView(prayerList, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         // Under the clock, not in its row: the clock and the top buttons already fill that line.
+        // Weather, holidays and prayer times each take a third of this row.
         strip = row(activity, density);
         strip.setPadding(0, dp(density, 8), 0, 0);
-        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        strip.addView(weather, half);
+        LinearLayout.LayoutParams third = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        strip.addView(weather, third);
         strip.addView(event, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        strip.addView(prayers, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout header = (LinearLayout) activity.findViewById(R.id.clock).getParent().getParent();
         View clockRow = (View) activity.findViewById(R.id.clock).getParent();
-        header.addView(strip, header.indexOfChild(clockRow) + 1);
-        show(false, false);
+        header.addView(strip, header.indexOfChild(clockRow) + 1,
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        show(false, false, false);
     }
 
     /** Null when com.msrafi.homeinfo is not installed, or it publishes no row of its own. */
@@ -188,7 +219,7 @@ final class InfoStrip {
 
     private void apply(String[] values) {
         if (values[0] == null) {
-            show(false, false);
+            show(false, false, false);
             return;
         }
         symbol.setText(blank(values[0]));
@@ -200,15 +231,40 @@ final class InfoStrip {
         kicker.setText(blank(values[6]));
         title.setText(blank(values[7]));
         when.setText(blank(values[8]));
+        boolean hasPrayers = applyPrayers(values.length > 9 ? values[9] : "");
         boolean hasWeather = !blank(values[1]).isEmpty();
         boolean hasEvent = !blank(values[6]).isEmpty() || !blank(values[7]).isEmpty() || !blank(values[8]).isEmpty();
-        show(hasWeather, hasEvent);
+        show(hasWeather, hasEvent, hasPrayers);
     }
 
-    private void show(boolean hasWeather, boolean hasEvent) {
+    /** Fills the six prayer rows from "Name\ttime" lines. A third field of "next" marks the one still ahead. */
+    private boolean applyPrayers(String block) {
+        String[] lines = block.split("\n", -1);
+        boolean any = false;
+        for (int i = 0; i < PRAYER_ROWS; i++) {
+            String line = i < lines.length ? lines[i] : "";
+            String[] parts = line.split("\t", -1);
+            String name = parts.length > 0 ? parts[0] : "";
+            String time = parts.length > 1 ? parts[1] : "";
+            boolean next = parts.length > 2 && "next".equals(parts[2]);
+            boolean current = parts.length > 2 && "current".equals(parts[2]);
+            prayerName[i].setText(name);
+            prayerTime[i].setText(time);
+            // Green is the prayer underway. White is the next one, with the minutes still left.
+            int color = next ? Color.WHITE : current ? 0xFF2BB673 : 0xA6FFFFFF;
+            prayerName[i].setTextColor(color);
+            prayerTime[i].setTextColor(next ? Color.WHITE : current ? 0xFF2BB673 : 0xE6FFFFFF);
+            ((View) prayerName[i].getParent()).setVisibility(name.isEmpty() ? View.GONE : View.VISIBLE);
+            if (!name.isEmpty()) any = true;
+        }
+        return any;
+    }
+
+    private void show(boolean hasWeather, boolean hasEvent, boolean hasPrayers) {
         weather.setVisibility(hasWeather ? View.VISIBLE : View.GONE);
         event.setVisibility(hasEvent ? View.VISIBLE : View.GONE);
-        strip.setVisibility(hasWeather || hasEvent ? View.VISIBLE : View.GONE);
+        prayers.setVisibility(hasPrayers ? View.VISIBLE : View.GONE);
+        strip.setVisibility(hasWeather || hasEvent || hasPrayers ? View.VISIBLE : View.GONE);
     }
 
     private static String blank(String value) {

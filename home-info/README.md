@@ -16,6 +16,8 @@ The place is Iselin, NJ, in Fahrenheit and mph. That is `app/src/main/res/values
 
 The three rows are the next US holiday, the next India holiday, and today's Hijri date. The holidays come from the public Google calendars in `calendar_feeds`. The Hijri date is the Umm al-Qura civil calendar, worked out on the TV.
 
+A third column lists today's Fajr, sunrise, Dhuhr, Asr, Maghrib and Isha. The times come from Aladhan, with `prayer_method` and `prayer_school` in the same config file. The next time still ahead is shown in white. A failed fetch keeps the last times.
+
 ## How it stays off the launcher's network
 
 Home looks for the package `com.msrafi.homeinfo`. On each return to Home, and about once a minute after that, the launcher queries `content://com.msrafi.homeinfo.now/now` and copies the text into the clock row. Open-Meteo and the calendar feed are contacted from this app, about every 15 minutes while Home is open. The last good weather line stays up if a later fetch fails.

@@ -588,6 +588,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         racePager = findViewById(R.id.racePager);
         gameDay = GameDay.create(this, cfg.gameDay, handler, this::updatePanel);
         infoStrip = InfoStrip.attach(this);
+        placePrayerLineBelowClock();
         // The rotation runs on the clock that never jumps: setting the TV's time must not stall or stretch a turn.
         rotationStart = SystemClock.elapsedRealtime();
         showStats = cfg.showStats;
@@ -2791,6 +2792,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (shamsi) shamsiDate.setText(Shamsi.today(getResources()));
         if (lunar) lunarDate.setText(Lunar.today(getResources(), lunarOffset));
+    }
+
+    /**
+     * The prayer line (and an F1 panel, when one is on) is pinned a fixed distance from the top of the
+     * screen. The info strip made the clock block taller, so that spot now lands on the strip. Sit the
+     * line just under the block instead, and follow it if the strip grows.
+     */
+    private void placePrayerLineBelowClock() {
+        View clockBlock = findViewById(R.id.leftBlock);
+        View root = findViewById(R.id.root);
+        clockBlock.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int y = clockBlock.getBottom();
+            View parent = clockBlock.getParent() instanceof View ? (View) clockBlock.getParent() : null;
+            while (parent != null && parent != root) {
+                y += parent.getTop();
+                parent = parent.getParent() instanceof View ? (View) parent.getParent() : null;
+            }
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) racePanel.getLayoutParams();
+            int want = y + Math.round(16 * density);
+            if (lp.topMargin != want) {
+                lp.topMargin = want;
+                racePanel.setLayoutParams(lp);
+            }
+        });
     }
 
     // ---- race-weekend panel (a theme's race_calendar) -----------------------------------------------

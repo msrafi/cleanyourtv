@@ -7,6 +7,9 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+import android.text.format.DateFormat;
+
+import java.time.ZoneId;
 
 /** One row for the home strip. Read-only. Home asks, and a stale row starts a refresh. */
 public final class NowProvider extends ContentProvider {
@@ -15,7 +18,7 @@ public final class NowProvider extends ContentProvider {
     /** Names and order Home asks for. */
     static final String[] COLUMNS = {
             "symbol", "temperature", "condition", "feels", "place", "metrics",
-            "event_kicker", "event_title", "event_when"
+            "event_kicker", "event_title", "event_when", "prayers"
     };
 
     @Override
@@ -39,7 +42,10 @@ public final class NowProvider extends ContentProvider {
                     prefs.getString("metrics", ""),
                     prefs.getString("event_kicker", ""),
                     prefs.getString("event_title", ""),
-                    prefs.getString("event_when", "")
+                    prefs.getString("event_when", ""),
+                    Prayers.lines(prefs.getString("prayer_raw", ""), System.currentTimeMillis(),
+                            ZoneId.systemDefault(), prefs.getString("prayer_day", ""),
+                            DateFormat.is24HourFormat(ctx))
             });
         }
         cursor.setNotificationUri(ctx.getContentResolver(), URI);

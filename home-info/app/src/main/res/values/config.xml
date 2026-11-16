@@ -6,6 +6,10 @@
     <string name="place" translatable="false">Iselin, NJ</string>
     <!-- false shows Celsius and km/h, as in the reference picture. -->
     <bool name="weather_fahrenheit">true</bool>
+    <!-- Aladhan method and Asr school, the same numbers the prayer-times app uses.
+         2 is ISNA. 1 is Hanafi Asr; 0 is Shafi. -->
+    <string name="prayer_method" translatable="false">2</string>
+    <string name="prayer_school" translatable="false">1</string>
     <!-- Public Google holiday calendars, one per line: "Name|https://…ics".
          The first line is the top row, the second the middle. Today's Hijri date is the bottom row. -->
     <string-array name="calendar_feeds" translatable="false">

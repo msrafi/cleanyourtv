@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.format.DateFormat;
 
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -17,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class Refresh {
     static final String PREFS = "home_info";
     /** Bump when the calendars change, so a TV that already cached a row fetches again. */
-    private static final int GENERATION = 4;
+    private static final int GENERATION = 5;
     private static final long FRESH_MS = 15 * 60 * 1000L;
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "home-info");
@@ -48,21 +49,42 @@ final class Refresh {
 
     private static void update(Context ctx) {
         long now = System.currentTimeMillis();
+        ZoneId zone = ZoneId.systemDefault();
         Weather.Now weather = null;
+        String prayerRaw = null;
+        boolean coordinatesOk = false;
         try {
             double latitude = Double.parseDouble(ctx.getString(R.string.latitude));
             double longitude = Double.parseDouble(ctx.getString(R.string.longitude));
             Weather.checkCoordinates(latitude, longitude);
-            weather = Weather.fetch(latitude, longitude);
+            coordinatesOk = true;
         } catch (Exception ignored) {
-            // Keep the previous conditions. Home still has them until a later refresh works.
+            // A bad place leaves the last weather and the last prayer times on screen.
+        }
+        if (coordinatesOk) {
+            try {
+                weather = Weather.fetch(Double.parseDouble(ctx.getString(R.string.latitude)),
+                        Double.parseDouble(ctx.getString(R.string.longitude)));
+            } catch (Exception ignored) {
+                // Keep the previous conditions. Home still has them until a later refresh works.
+            }
         }
         SharedPreferences prefs = prefs(ctx);
+        String today = LocalDate.now(zone).toString();
+        if (coordinatesOk && !today.equals(prefs.getString("prayer_day", ""))) {
+            try {
+                prayerRaw = Prayers.fetch(ctx.getString(R.string.latitude), ctx.getString(R.string.longitude),
+                        ctx.getString(R.string.prayer_method), ctx.getString(R.string.prayer_school),
+                        LocalDate.now(zone));
+            } catch (Exception ignored) {
+                // Keep yesterday's times. The next refresh tries today's again.
+            }
+        }
         boolean replacing = prefs.getInt("generation", 0) != GENERATION;
         Lines lines = lines(ctx, now, replacing);
         boolean fahrenheit = ctx.getResources().getBoolean(R.bool.weather_fahrenheit);
         Present present = Present.of(weather, ctx.getString(R.string.place), fahrenheit, fahrenheit,
-                null, now, ZoneId.systemDefault(), Locale.getDefault(), DateFormat.is24HourFormat(ctx));
+                null, now, zone, Locale.getDefault(), DateFormat.is24HourFormat(ctx));
         SharedPreferences.Editor editor = prefs.edit();
         if (weather != null) {
             editor.putString("symbol", present.symbol)
@@ -74,7 +96,8 @@ final class Refresh {
         }
         if (lines.top != null) editor.putString("event_kicker", lines.top);
         if (lines.middle != null) editor.putString("event_title", lines.middle);
-        editor.putString("event_when", Present.hijriLine(now, ZoneId.systemDefault()));
+        editor.putString("event_when", Present.hijriLine(now, zone));
+        if (prayerRaw != null) editor.putString("prayer_raw", prayerRaw).putString("prayer_day", today);
         if (lines.complete) editor.putInt("generation", GENERATION);
         editor.putLong("fetched_at", now).apply();
         ctx.getContentResolver().notifyChange(NowProvider.URI, null);
