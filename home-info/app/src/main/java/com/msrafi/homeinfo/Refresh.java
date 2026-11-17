@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.text.format.DateFormat;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -18,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class Refresh {
     static final String PREFS = "home_info";
     /** Bump when the calendars change, so a TV that already cached a row fetches again. */
-    private static final int GENERATION = 5;
+    private static final int GENERATION = 8;
     private static final long FRESH_MS = 15 * 60 * 1000L;
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "home-info");
@@ -51,8 +52,10 @@ final class Refresh {
         long now = System.currentTimeMillis();
         ZoneId zone = ZoneId.systemDefault();
         Weather.Now weather = null;
+        String forecast = null;
         String prayerRaw = null;
         boolean coordinatesOk = false;
+        boolean fahrenheit = ctx.getResources().getBoolean(R.bool.weather_fahrenheit);
         try {
             double latitude = Double.parseDouble(ctx.getString(R.string.latitude));
             double longitude = Double.parseDouble(ctx.getString(R.string.longitude));
@@ -63,8 +66,11 @@ final class Refresh {
         }
         if (coordinatesOk) {
             try {
-                weather = Weather.fetch(Double.parseDouble(ctx.getString(R.string.latitude)),
-                        Double.parseDouble(ctx.getString(R.string.longitude)));
+                Weather.Report report = Weather.fetch(Double.parseDouble(ctx.getString(R.string.latitude)),
+                        Double.parseDouble(ctx.getString(R.string.longitude)),
+                        LocalDate.now(zone), fahrenheit, Locale.getDefault());
+                weather = report.now;
+                if (report.days != null && !report.days.isEmpty()) forecast = report.days;
             } catch (Exception ignored) {
                 // Keep the previous conditions. Home still has them until a later refresh works.
             }
@@ -82,7 +88,6 @@ final class Refresh {
         }
         boolean replacing = prefs.getInt("generation", 0) != GENERATION;
         Lines lines = lines(ctx, now, replacing);
-        boolean fahrenheit = ctx.getResources().getBoolean(R.bool.weather_fahrenheit);
         Present present = Present.of(weather, ctx.getString(R.string.place), fahrenheit, fahrenheit,
                 null, now, zone, Locale.getDefault(), DateFormat.is24HourFormat(ctx));
         SharedPreferences.Editor editor = prefs.edit();
@@ -93,11 +98,18 @@ final class Refresh {
                     .putString("feels", present.feels)
                     .putString("place", present.place)
                     .putString("metrics", present.metrics);
+            if (forecast != null) editor.putString("forecast", forecast);
         }
         if (lines.top != null) editor.putString("event_kicker", lines.top);
         if (lines.middle != null) editor.putString("event_title", lines.middle);
         editor.putString("event_when", Present.hijriLine(now, zone));
         if (prayerRaw != null) editor.putString("prayer_raw", prayerRaw).putString("prayer_day", today);
+        String month = YearMonth.now(zone).toString();
+        if (lines.usBody != null) {
+            editor.putString("us_month", month).putString("us_marks", MonthMarks.usMarks(lines.usBody, LocalDate.now(zone), zone));
+        } else if (!month.equals(prefs.getString("us_month", ""))) {
+            editor.remove("us_marks").remove("us_month");
+        }
         if (lines.complete) editor.putInt("generation", GENERATION);
         editor.putLong("fetched_at", now).apply();
         ctx.getContentResolver().notifyChange(NowProvider.URI, null);
@@ -112,6 +124,7 @@ final class Refresh {
         String[] feeds = ctx.getResources().getStringArray(R.array.calendar_feeds);
         String top = null;
         String middle = null;
+        String usBody = null;
         int answered = 0;
         int listed = 0;
         ZoneId zone = ZoneId.systemDefault();
@@ -124,26 +137,31 @@ final class Refresh {
             String url = feeds[i].substring(bar + 1).trim();
             String line;
             try {
-                line = Present.holidayLine(label, Agenda.next(Net.get(url), now, zone), zone, locale);
+                String body = Net.get(url);
+                line = Present.holidayLine(label, Agenda.next(body, now, zone), zone, locale);
                 answered++;
+                if ("US".equalsIgnoreCase(label)) usBody = body;
             } catch (Exception ignored) {
                 line = replacing ? "" : null;
             }
             if (i == 0) top = line;
             else middle = line;
         }
-        return new Lines(top, middle, listed > 0 && answered == listed);
+        return new Lines(top, middle, listed > 0 && answered == listed, usBody);
     }
 
     private static final class Lines {
         final String top;
         final String middle;
         final boolean complete;
+        /** The US holiday feed when this refresh got one, so the month grid can mark those days. */
+        final String usBody;
 
-        Lines(String top, String middle, boolean complete) {
+        Lines(String top, String middle, boolean complete, String usBody) {
             this.top = top;
             this.middle = middle;
             this.complete = complete;
+            this.usBody = usBody;
         }
     }
 

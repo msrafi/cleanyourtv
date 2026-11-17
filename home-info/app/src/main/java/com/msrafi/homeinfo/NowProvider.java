@@ -9,6 +9,7 @@ import android.database.MatrixCursor;
 import android.net.Uri;
 import android.text.format.DateFormat;
 
+import java.time.LocalDate;
 import java.time.ZoneId;
 
 /** One row for the home strip. Read-only. Home asks, and a stale row starts a refresh. */
@@ -18,11 +19,21 @@ public final class NowProvider extends ContentProvider {
     /** Names and order Home asks for. */
     static final String[] COLUMNS = {
             "symbol", "temperature", "condition", "feels", "place", "metrics",
-            "event_kicker", "event_title", "event_when", "prayers"
+            "event_kicker", "event_title", "event_when", "prayers", "reminders", "calendar", "forecast"
     };
 
     @Override
     public boolean onCreate() {
+        Context ctx = getContext();
+        if (ctx != null) {
+            EditorServer.start(ctx);
+            try {
+                ctx.startForegroundService(new android.content.Intent(ctx, EditorService.class));
+            } catch (RuntimeException ignored) {
+                // Android may refuse a service start from the background. The page still runs
+                // in this process, which Home wakes about once a minute while it is open.
+            }
+        }
         return true;
     }
 
@@ -32,7 +43,8 @@ public final class NowProvider extends ContentProvider {
         if (ctx == null || !"now".equals(uri.getLastPathSegment())) return null;
         SharedPreferences prefs = ctx.getSharedPreferences(Refresh.PREFS, Context.MODE_PRIVATE);
         MatrixCursor cursor = new MatrixCursor(COLUMNS);
-        if (prefs.contains("fetched_at")) {
+        String reminders = reminders(ctx);
+        if (prefs.contains("fetched_at") || !reminders.isEmpty()) {
             cursor.addRow(new Object[] {
                     prefs.getString("symbol", ""),
                     prefs.getString("temperature", ""),
@@ -45,12 +57,20 @@ public final class NowProvider extends ContentProvider {
                     prefs.getString("event_when", ""),
                     Prayers.lines(prefs.getString("prayer_raw", ""), System.currentTimeMillis(),
                             ZoneId.systemDefault(), prefs.getString("prayer_day", ""),
-                            DateFormat.is24HourFormat(ctx))
+                            DateFormat.is24HourFormat(ctx)),
+                    reminders,
+                    MonthMarks.grid(LocalDate.now(ZoneId.systemDefault()),
+                            prefs.getString("us_marks", ""), prefs.getString("us_month", "")),
+                    prefs.getString("forecast", "")
             });
         }
         cursor.setNotificationUri(ctx.getContentResolver(), URI);
         Refresh.kick(ctx);
         return cursor;
+    }
+
+    private static String reminders(Context ctx) {
+        return Reminders.text(ctx);
     }
 
     @Override

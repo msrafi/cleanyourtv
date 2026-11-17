@@ -2,7 +2,7 @@
 
 The top of Home can show the weather and the next calendar event beside the clock. This app fetches both. The launcher stays offline and only reads one row from here.
 
-Nothing has been installed on the TV. Building this folder does not change the set.
+This app is already on the TV. Building this folder does not change the set until `tools/push-home.sh` installs it.
 
 ## What shows
 
@@ -10,6 +10,7 @@ Beside the clock, once this app is installed:
 
 - A symbol, the temperature, and the condition.
 - Feels-like, the place, the wind, and the humidity.
+- Under today's weather, still inside that column, the next five days in a small row: the weekday, an icon, the high, and the low. Today is the line above, so it is not repeated.
 - Up next: the next event's name and when it is. An event happening now is labelled NOW. An all-day event today is labelled TODAY.
 
 The place is Iselin, NJ, in Fahrenheit and mph. That is `app/src/main/res/values/config.xml`. Set `weather_fahrenheit` to false for Celsius and km/h.
@@ -17,6 +18,8 @@ The place is Iselin, NJ, in Fahrenheit and mph. That is `app/src/main/res/values
 The three rows are the next US holiday, the next India holiday, and today's Hijri date. The holidays come from the public Google calendars in `calendar_feeds`. The Hijri date is the Umm al-Qura civil calendar, worked out on the TV.
 
 A third column lists today's Fajr, sunrise, Dhuhr, Asr, Maghrib and Isha. The times come from Aladhan, with `prayer_method` and `prayer_school` in the same config file. The next time still ahead is shown in white. A failed fetch keeps the last times.
+
+Under the prayer line, Home lists up to five reminders. To their right is this month. US holidays from that same feed are gold, and Islamic days worked out on the TV are green: the 1st of each Hijri month, plus Ashura, Mawlid, Isra and Mi'raj, mid-Shaban, Ramadan, Laylat al-Qadr, Eid al-Fitr, the Day of Arafah, and Eid al-Adha. A local moon sighting can put an Islamic day one off. The lines in `reminders` are the first list. After that, a phone on the same Wi-Fi can change them: open `http://<tv ip>:8787`. The page answers only a home-network address, and a save from another website is refused. Do not forward port 8787 on the router. Once the page has saved a list, that list is what Home shows, including after this app is installed again. Clearing the app's data brings back the lines in the config file.
 
 ## How it stays off the launcher's network
 
@@ -30,6 +33,6 @@ From this folder, with JDK 17 and Android SDK 34:
 ./gradlew --no-daemon assembleRelease
 ```
 
-The APK is `app/build/outputs/apk/release/app-release.apk`. Install it together with a launcher built from this checkout. Until this app is on the TV, Home looks as it does now.
+The APK is `app/build/outputs/apk/release/app-release.apk`. `tools/push-home.sh` installs it and reopens Home. The launcher does not need to be rebuilt for a reminder change.
 
 The app is in the launcher's hidden list, so it does not take a tile.

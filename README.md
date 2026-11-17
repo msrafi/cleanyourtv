@@ -193,6 +193,7 @@ tools/venv/bin/python -I tools/wallpaper_prep.py ~/Pictures/trip mytheme/wallpap
 |---|---|
 | [`tools/tv.py`](tools/tv.py) | Pure-Python ADB client: shell, batch, push, pull, reboot, and screenshots, optionally pressing remote keys first. Works where the stock `adb` binary is blocked. Optional [paired Google ADB backend](tools/native-adb.md) for encrypted Wireless debugging. |
 | [`tools/shot.sh`](tools/shot.sh) | Saves a screenshot of the TV under `shots/`, in a folder named with the date and a file named with the time. Keys are passed on to `tv.py`. |
+| [`tools/push-home.sh`](tools/push-home.sh) | Builds the home-info app from this checkout and installs it on the TV, then reopens Home. Edit `home-info/app/src/main/res/values/config.xml` first for the city or the holiday calendars. Reminder lines, once the page has been used, are edited at `http://<tv ip>:8787` from a phone on the same Wi-Fi. |
 | [`tools/docker-build.sh`](tools/docker-build.sh) | Builds the launcher or an add-on in Docker (JDK 17, Android SDK 34), so this computer needs nothing but Docker. Install the result with `SKIP_BUILD=1`. [Guide](tools/docker-build.md). |
 | [`tools/b64push.py`](tools/b64push.py) | Uploads large files such as APKs in base64 chunks and verifies the checksum. |
 | [`tools/relay.py`](tools/relay.py) | Forwards a local port to the TV's ADB port, for assistants whose sandbox can't reach your network. Listens on this computer only. [Guide](tools/relay.md). |

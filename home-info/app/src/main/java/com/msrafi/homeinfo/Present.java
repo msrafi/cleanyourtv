@@ -71,6 +71,11 @@ final class Present {
         return Math.round(kmh) + " km/h";
     }
 
+    static String hijriMonthName(int month) {
+        if (month < 1 || month > HIJRI_MONTHS.length) return Integer.toString(month);
+        return HIJRI_MONTHS[month - 1];
+    }
+
     private static final String[] HIJRI_MONTHS = {
             "Muharram", "Safar", "Rabi al-Awwal", "Rabi al-Thani",
             "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Shaban",
@@ -94,8 +99,8 @@ final class Present {
     static String hijriLine(long now, ZoneId zone) {
         HijrahDate hijri = HijrahDate.from(Instant.ofEpochMilli(now).atZone(zone).toLocalDate());
         int month = hijri.get(ChronoField.MONTH_OF_YEAR);
-        String name = month >= 1 && month <= HIJRI_MONTHS.length ? HIJRI_MONTHS[month - 1] : Integer.toString(month);
-        return "Hijri · " + hijri.get(ChronoField.DAY_OF_MONTH) + " " + name + " " + hijri.get(ChronoField.YEAR);
+        return "Hijri · " + hijri.get(ChronoField.DAY_OF_MONTH) + " " + hijriMonthName(month)
+                + " " + hijri.get(ChronoField.YEAR);
     }
 
     static String kicker(Agenda.Item event, long now, ZoneId zone) {

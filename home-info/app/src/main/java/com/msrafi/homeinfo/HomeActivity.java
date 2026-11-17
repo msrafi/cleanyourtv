@@ -18,6 +18,17 @@ public final class HomeActivity extends Activity {
         text.setGravity(Gravity.CENTER);
         int pad = Math.round(48 * getResources().getDisplayMetrics().density);
         text.setPadding(pad, pad, pad, pad);
+        EditorServer.start(this);
+        try {
+            startForegroundService(new android.content.Intent(this, EditorService.class));
+        } catch (RuntimeException ignored) {
+            // The page is already listening in this process.
+        }
+        String page = EditorServer.address();
+        text.setText(page == null
+                ? getString(R.string.blurb)
+                : "Edit the reminders from a phone on this Wi-Fi:\n\n" + page
+                + "\n\nAnyone on the home Wi-Fi can open that page. Leave the port off the router.");
         setContentView(text);
         Refresh.kick(this);
     }

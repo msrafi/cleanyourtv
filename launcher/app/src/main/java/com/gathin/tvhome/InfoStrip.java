@@ -32,9 +32,11 @@ final class InfoStrip {
     static final String META = "com.gathin.tvhome.info";
     private static final String[] COLUMNS = {
             "symbol", "temperature", "condition", "feels", "place", "metrics",
-            "event_kicker", "event_title", "event_when", "prayers"
+            "event_kicker", "event_title", "event_when", "prayers", "reminders", "calendar", "forecast"
     };
+    private static final int FORECAST_DAYS = 5;
     private static final int PRAYER_ROWS = 6;
+    private static final int REMINDER_ROWS = 5;
     private static final long REREAD_MS = 60_000L;
 
     private final Context ctx;
@@ -50,6 +52,11 @@ final class InfoStrip {
         }
     };
     private final LinearLayout weather;
+    private final LinearLayout forecastBlock;
+    private final TextView[] forecastDay = new TextView[FORECAST_DAYS];
+    private final ForecastIcon[] forecastIcon = new ForecastIcon[FORECAST_DAYS];
+    private final TextView[] forecastHigh = new TextView[FORECAST_DAYS];
+    private final TextView[] forecastLow = new TextView[FORECAST_DAYS];
     private final LinearLayout event;
     private final TextView symbol;
     private final TextView temperature;
@@ -63,6 +70,10 @@ final class InfoStrip {
     private final LinearLayout prayers;
     private final TextView[] prayerName = new TextView[PRAYER_ROWS];
     private final TextView[] prayerTime = new TextView[PRAYER_ROWS];
+    private final LinearLayout lowerBand;
+    private final LinearLayout reminderBlock;
+    private final TextView[] reminderLine = new TextView[REMINDER_ROWS];
+    private final MonthGrid monthGrid;
     private final LinearLayout strip;
     private boolean watching;
 
@@ -103,6 +114,35 @@ final class InfoStrip {
         detailParams.setMarginStart(dp(density, 14));
         weather.addView(detail, detailParams);
 
+        // Five days, only under today's weather, and small enough to stay inside that column.
+        forecastBlock = row(activity, density);
+        forecastBlock.setGravity(Gravity.TOP);
+        forecastBlock.setPadding(0, dp(density, 6), 0, 0);
+        for (int i = 0; i < FORECAST_DAYS; i++) {
+            LinearLayout dayColumn = column(activity);
+            dayColumn.setGravity(Gravity.CENTER_HORIZONTAL);
+            forecastDay[i] = text(activity, 9, 0xE6FFFFFF);
+            forecastDay[i].setGravity(Gravity.CENTER);
+            forecastIcon[i] = new ForecastIcon(activity);
+            LinearLayout temps = row(activity, density);
+            temps.setGravity(Gravity.CENTER);
+            temps.setPadding(0, 0, 0, 0);
+            forecastHigh[i] = text(activity, 10, Color.WHITE);
+            forecastLow[i] = text(activity, 9, 0xFF9AA0A6);
+            temps.addView(forecastHigh[i]);
+            temps.addView(forecastLow[i], inset(density, 3));
+            dayColumn.addView(forecastDay[i], wrap());
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(density, 16), dp(density, 16));
+            iconParams.topMargin = dp(density, 1);
+            dayColumn.addView(forecastIcon[i], iconParams);
+            dayColumn.addView(temps, wrap());
+            forecastBlock.addView(dayColumn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        }
+        LinearLayout.LayoutParams forecastParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        forecastParams.setMarginStart(dp(density, 31));
+        forecastBlock.setVisibility(View.GONE);
+
         event = row(activity, density);
         LinearLayout.LayoutParams eventBar = barParams(density);
         eventBar.setMarginStart(dp(density, 8));
@@ -140,15 +180,57 @@ final class InfoStrip {
         // Under the clock, not in its row: the clock and the top buttons already fill that line.
         // Weather, holidays and prayer times each take a third of this row.
         strip = row(activity, density);
+        strip.setGravity(Gravity.TOP);
         strip.setPadding(0, dp(density, 8), 0, 0);
         LinearLayout.LayoutParams third = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        strip.addView(weather, third);
+        LinearLayout weatherColumn = column(activity);
+        weatherColumn.addView(weather, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        weatherColumn.addView(forecastBlock, forecastParams);
+        strip.addView(weatherColumn, third);
         strip.addView(event, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         strip.addView(prayers, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout header = (LinearLayout) activity.findViewById(R.id.clock).getParent().getParent();
         View clockRow = (View) activity.findViewById(R.id.clock).getParent();
-        header.addView(strip, header.indexOfChild(clockRow) + 1,
+        int underClock = header.indexOfChild(clockRow) + 1;
+        header.addView(strip, underClock,
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // Under the prayer line, which is drawn over the gap below the clock block.
+        reminderBlock = column(activity);
+        reminderBlock.setFocusable(false);
+        TextView reminderKicker = text(activity, 12, 0xB3FFFFFF);
+        reminderKicker.setLetterSpacing(0.18f);
+        reminderKicker.setAllCaps(true);
+        reminderKicker.setText("Reminders");
+        reminderBlock.addView(reminderKicker);
+        for (int i = 0; i < REMINDER_ROWS; i++) {
+            reminderLine[i] = text(activity, 18, Color.WHITE);
+            LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lineParams.topMargin = dp(density, i == 0 ? 8 : 4);
+            reminderBlock.addView(reminderLine[i], lineParams);
+        }
+        // Beside the prayer line: reminders stay under it, and the month sits in the open space to the right.
+        reminderBlock.setPadding(0, dp(density, 92), 0, 0);
+        lowerBand = new LinearLayout(activity);
+        lowerBand.setOrientation(LinearLayout.HORIZONTAL);
+        lowerBand.setGravity(Gravity.TOP | Gravity.END);
+        lowerBand.setClipChildren(false);
+        lowerBand.setFocusable(false);
+        lowerBand.addView(reminderBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        monthGrid = new MonthGrid(activity, density);
+        LinearLayout.LayoutParams calendarParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        calendarParams.setMarginStart(dp(density, 24));
+        calendarParams.gravity = Gravity.TOP;
+        lowerBand.addView(monthGrid.view(), calendarParams);
+        View relative = (View) header.getParent();
+        LinearLayout page = (LinearLayout) relative.getParent();
+        LinearLayout.LayoutParams bandParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bandParams.topMargin = dp(density, 16);
+        page.addView(lowerBand, page.indexOfChild(relative) + 1, bandParams);
         show(false, false, false);
     }
 
@@ -220,6 +302,10 @@ final class InfoStrip {
     private void apply(String[] values) {
         if (values[0] == null) {
             show(false, false, false);
+            applyReminders("");
+            monthGrid.bind("");
+            applyForecast("");
+            lowerBand.setVisibility(View.GONE);
             return;
         }
         symbol.setText(blank(values[0]));
@@ -232,6 +318,10 @@ final class InfoStrip {
         title.setText(blank(values[7]));
         when.setText(blank(values[8]));
         boolean hasPrayers = applyPrayers(values.length > 9 ? values[9] : "");
+        applyReminders(values.length > 10 ? values[10] : "");
+        monthGrid.bind(values.length > 11 ? values[11] : "");
+        applyForecast(values.length > 12 ? values[12] : "");
+        lowerBand.setVisibility(View.VISIBLE);
         boolean hasWeather = !blank(values[1]).isEmpty();
         boolean hasEvent = !blank(values[6]).isEmpty() || !blank(values[7]).isEmpty() || !blank(values[8]).isEmpty();
         show(hasWeather, hasEvent, hasPrayers);
@@ -258,6 +348,43 @@ final class InfoStrip {
             if (!name.isEmpty()) any = true;
         }
         return any;
+    }
+
+    /** Tomorrow and the four days after it: weekday, icon, high, low. An empty list hides the rows. */
+    private void applyForecast(String block) {
+        String[] lines = block == null ? new String[0] : block.split("\n", -1);
+        boolean any = false;
+        int shown = 0;
+        for (int i = 0; i < FORECAST_DAYS; i++) {
+            String line = "";
+            while (shown < lines.length && lines[shown].trim().isEmpty()) shown++;
+            if (shown < lines.length) line = lines[shown++].trim();
+            String[] parts = line.split("\t", -1);
+            String day = parts.length > 0 ? parts[0] : "";
+            forecastDay[i].setText(day);
+            forecastIcon[i].setKind(parts.length > 1 ? parts[1] : "");
+            forecastHigh[i].setText(parts.length > 2 ? parts[2] : "");
+            forecastLow[i].setText(parts.length > 3 ? parts[3] : "");
+            ((View) forecastDay[i].getParent()).setVisibility(day.isEmpty() ? View.GONE : View.VISIBLE);
+            if (!day.isEmpty()) any = true;
+        }
+        forecastBlock.setVisibility(any ? View.VISIBLE : View.GONE);
+    }
+
+    /** Up to five lines under the prayer line. An empty list hides the block. */
+    private void applyReminders(String block) {
+        String[] lines = block == null ? new String[0] : block.split("\n", -1);
+        boolean any = false;
+        int shown = 0;
+        for (int i = 0; i < REMINDER_ROWS; i++) {
+            String line = "";
+            while (shown < lines.length && lines[shown].trim().isEmpty()) shown++;
+            if (shown < lines.length) line = lines[shown++].trim();
+            reminderLine[i].setText(line);
+            reminderLine[i].setVisibility(line.isEmpty() ? View.GONE : View.VISIBLE);
+            if (!line.isEmpty()) any = true;
+        }
+        reminderBlock.setVisibility(any ? View.VISIBLE : View.GONE);
     }
 
     private void show(boolean hasWeather, boolean hasEvent, boolean hasPrayers) {

@@ -1,5 +1,6 @@
 package com.msrafi.homeinfo;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -55,6 +56,151 @@ final class Agenda {
             }
         }
         return best;
+    }
+
+    /** An all-day holiday that falls in this month. Timed events are left out. */
+    static final class Holiday {
+        final LocalDate date;
+        final String title;
+
+        Holiday(LocalDate date, String title) {
+            this.date = date;
+            this.title = title;
+        }
+    }
+
+    /** Every all-day holiday in the month that contains {@code day}, including ones already past. */
+    static List<Holiday> inMonth(String ics, LocalDate day, ZoneId zone) {
+        List<Holiday> found = new ArrayList<>();
+        if (ics == null || ics.isEmpty() || day == null) return found;
+        LocalDate from = day.withDayOfMonth(1);
+        LocalDate to = from.plusMonths(1);
+        List<String> block = null;
+        for (String line : unfold(ics)) {
+            if ("BEGIN:VEVENT".equalsIgnoreCase(line.trim())) {
+                block = new ArrayList<>();
+            } else if ("END:VEVENT".equalsIgnoreCase(line.trim())) {
+                if (block != null) collect(block, from, to, zone, found);
+                block = null;
+            } else if (block != null) {
+                block.add(line);
+            }
+        }
+        found.sort((a, b) -> {
+            int byDate = a.date.compareTo(b.date);
+            return byDate != 0 ? byDate : a.title.compareTo(b.title);
+        });
+        return found;
+    }
+
+    private static void collect(List<String> lines, LocalDate from, LocalDate to, ZoneId zone, List<Holiday> out) {
+        String summary = "";
+        String startRaw = null;
+        String startParams = "";
+        String ruleText = "";
+        boolean cancelled = false;
+        for (String line : lines) {
+            int colon = line.indexOf(':');
+            if (colon < 0) continue;
+            String left = line.substring(0, colon);
+            String value = unescape(line.substring(colon + 1).trim());
+            int semi = left.indexOf(';');
+            String name = (semi < 0 ? left : left.substring(0, semi)).toUpperCase(Locale.ROOT);
+            String params = semi < 0 ? "" : left.substring(semi + 1);
+            if ("SUMMARY".equals(name)) summary = value;
+            else if ("DTSTART".equals(name)) {
+                startRaw = value;
+                startParams = params;
+            } else if ("RRULE".equals(name)) ruleText = value;
+            else if ("STATUS".equals(name) && "CANCELLED".equalsIgnoreCase(value)) cancelled = true;
+        }
+        if (cancelled || summary.isEmpty() || startRaw == null) return;
+        boolean allDay = startParams.toUpperCase(Locale.ROOT).contains("VALUE=DATE") && !startRaw.contains("T");
+        if (!allDay) return;
+        ZoneId when = zoneOf(startParams, zone);
+        Long start = parseStart(startRaw, true, when);
+        if (start == null) return;
+        LocalDate first = Instant.ofEpochMilli(start).atZone(ZoneOffset.UTC).toLocalDate();
+        Map<String, String> rrule = rule(ruleText);
+        String title = summary.replace('\t', ' ').replace('\n', ' ').trim();
+        if ("YEARLY".equals(rrule.get("FREQ"))) {
+            for (int year = from.getYear(); year <= to.minusDays(1).getYear(); year++) {
+                for (LocalDate date : yearlyDates(year, first, rrule)) {
+                    if (!date.isBefore(from) && date.isBefore(to) && !untilBefore(rrule.get("UNTIL"), date, zone)) {
+                        addHoliday(out, date, title);
+                    }
+                }
+            }
+            return;
+        }
+        if (!first.isBefore(from) && first.isBefore(to)) addHoliday(out, first, title);
+    }
+
+    private static void addHoliday(List<Holiday> out, LocalDate date, String title) {
+        for (Holiday holiday : out) {
+            if (holiday.date.equals(date) && holiday.title.equals(title)) return;
+        }
+        out.add(new Holiday(date, title));
+    }
+
+    /** Fixed month-day, or the nth weekday when the rule says so (Thanksgiving is the 4th Thursday). */
+    private static List<LocalDate> yearlyDates(int year, LocalDate first, Map<String, String> rrule) {
+        List<LocalDate> dates = new ArrayList<>();
+        int month = number(rrule.get("BYMONTH"), first.getMonthValue());
+        String byday = rrule.get("BYDAY");
+        if (byday != null && !byday.isEmpty()) {
+            for (String token : byday.split(",")) {
+                LocalDate date = weekdayInMonth(year, month, token.trim().toUpperCase(Locale.ROOT));
+                if (date != null) dates.add(date);
+            }
+            return dates;
+        }
+        int day = number(rrule.get("BYMONTHDAY"), first.getDayOfMonth());
+        try {
+            dates.add(LocalDate.of(year, month, day));
+        } catch (RuntimeException ignored) {
+            // Feb 29 in a year that has no such day.
+        }
+        return dates;
+    }
+
+    private static LocalDate weekdayInMonth(int year, int month, String token) {
+        if (token.length() < 2) return null;
+        String code = token.substring(token.length() - 2);
+        DayOfWeek dow = WEEKDAYS.get(code);
+        if (dow == null || month < 1 || month > 12) return null;
+        int n = 1;
+        if (token.length() > 2) {
+            try {
+                n = Integer.parseInt(token.substring(0, token.length() - 2));
+            } catch (NumberFormatException bad) {
+                return null;
+            }
+        }
+        if (n == 0 || n > 5 || n < -5) return null;
+        LocalDate date;
+        if (n > 0) {
+            LocalDate first = LocalDate.of(year, month, 1);
+            int shift = (dow.getValue() - first.getDayOfWeek().getValue() + 7) % 7;
+            date = first.plusDays(shift + (long) (n - 1) * 7);
+        } else {
+            LocalDate last = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
+            int shift = (last.getDayOfWeek().getValue() - dow.getValue() + 7) % 7;
+            date = last.minusDays(shift + (long) (-n - 1) * 7);
+        }
+        return date.getMonthValue() == month ? date : null;
+    }
+
+    private static final Map<String, DayOfWeek> WEEKDAYS = new HashMap<>();
+
+    static {
+        WEEKDAYS.put("MO", DayOfWeek.MONDAY);
+        WEEKDAYS.put("TU", DayOfWeek.TUESDAY);
+        WEEKDAYS.put("WE", DayOfWeek.WEDNESDAY);
+        WEEKDAYS.put("TH", DayOfWeek.THURSDAY);
+        WEEKDAYS.put("FR", DayOfWeek.FRIDAY);
+        WEEKDAYS.put("SA", DayOfWeek.SATURDAY);
+        WEEKDAYS.put("SU", DayOfWeek.SUNDAY);
     }
 
     /**

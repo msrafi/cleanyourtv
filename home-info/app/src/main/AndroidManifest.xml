@@ -4,8 +4,10 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
-    <!-- Open-Meteo for the weather, and the calendar feed named in config.xml. -->
+    <!-- Open-Meteo, the holiday calendars, prayer times, and the reminders page on the home Wi-Fi. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- The TV's own calendar, when a Google account is on the set. Granted with pm grant at install. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
 
@@ -24,6 +26,15 @@
             android:name=".NowProvider"
             android:authorities="com.msrafi.homeinfo.now"
             android:exported="true" />
+
+        <service
+            android:name=".EditorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Edits the five home reminder lines from a phone on the same Wi-Fi." />
+        </service>
 
         <activity
             android:name=".HomeActivity"
