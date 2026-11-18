@@ -16,6 +16,8 @@ final class EditorPage {
     static final int MAX_LINES = 5;
     static final int MAX_CHARS = 120;
     static final int MAX_BODY = 4096;
+    /** A phone photo, before it is scaled down to the screen. */
+    static final int MAX_PICTURE = 8 * 1024 * 1024;
     private static final int MAX_HEAD = 4096;
     private static final byte[] HEADER_END = new byte[] {'\r', '\n', '\r', '\n'};
 
@@ -29,14 +31,24 @@ final class EditorPage {
         /** True when the phone saved a list. {@link #text} may be empty, which clears it. */
         final boolean write;
         final String text;
+        /** A picture to store. Null unless the phone uploaded one. */
+        final byte[] image;
+        /** The phone asked to go back to the theme picture. */
+        final boolean clearPicture;
+        /** The reply is the stored picture. The server fills {@link #body}. */
+        final boolean servePicture;
 
-        private Result(int status, String type, byte[] body, String location, boolean write, String text) {
+        private Result(int status, String type, byte[] body, String location, boolean write, String text,
+                byte[] image, boolean clearPicture, boolean servePicture) {
             this.status = status;
             this.type = type;
             this.body = body;
             this.location = location;
             this.write = write;
             this.text = text;
+            this.image = image;
+            this.clearPicture = clearPicture;
+            this.servePicture = servePicture;
         }
     }
 
@@ -73,16 +85,17 @@ final class EditorPage {
 
     static byte[] readMessage(InputStream in) throws IOException {
         ByteArrayOutputStream raw = new ByteArrayOutputStream();
-        byte[] buf = new byte[512];
+        byte[] buf = new byte[8192];
         while (true) {
             byte[] soFar = raw.toByteArray();
             int end = indexOf(soFar, HEADER_END);
             if (end >= 0) {
                 int length = contentLength(soFar, end);
                 if (length == Integer.MIN_VALUE) return soFar;
-                if (length < 0 || length > MAX_BODY) throw new IOException("body");
+                int cap = bodyCap(soFar, end);
+                if (length < 0 || length > cap) throw new IOException("body");
                 int need = end + HEADER_END.length + length;
-                if (need > MAX_HEAD + MAX_BODY) throw new IOException("body");
+                if (need > MAX_HEAD + cap) throw new IOException("body");
                 while (raw.size() < need) {
                     int n = in.read(buf, 0, Math.min(buf.length, need - raw.size()));
                     if (n < 0) return raw.toByteArray();
@@ -98,6 +111,10 @@ final class EditorPage {
     }
 
     static Result reply(byte[] request, String current, InetAddress remote) {
+        return reply(request, current, remote, false);
+    }
+
+    static Result reply(byte[] request, String current, InetAddress remote, boolean pictureOn) {
         if (!allowed(remote)) return plain(403, "This page is only for the home Wi-Fi.\n");
         if (request == null) return plain(400, "Bad request.\n");
         int end = indexOf(request, HEADER_END);
@@ -113,10 +130,15 @@ final class EditorPage {
         String method = requestLine[0];
         String target = requestLine[1];
         if ("GET".equals(method)) {
-            if (!"/".equals(target) && !"/?saved=1".equals(target)) return plain(404, "Not found.\n");
-            return html(page(current, "/?saved=1".equals(target)));
+            if ("/wallpaper".equals(target)) {
+                return pictureOn ? servePicture() : plain(404, "No picture.\n");
+            }
+            String notice = notice(target);
+            if (notice == null) return plain(404, "Not found.\n");
+            return html(page(current, notice, pictureOn));
         }
         if (!"POST".equals(method)) return plain(405, "Use the form.\n");
+        if ("/wallpaper".equals(target)) return wallpaper(request, end, lines);
         if (!"/".equals(target)) return plain(404, "Not found.\n");
         int length = contentLength(request, end);
         if (length < 0 || length > MAX_BODY) return plain(400, "Bad request.\n");
@@ -133,30 +155,107 @@ final class EditorPage {
     }
 
     private static Result html(byte[] body) {
-        return new Result(200, "text/html; charset=utf-8", body, null, false, null);
+        return new Result(200, "text/html; charset=utf-8", body, null, false, null, null, false, false);
     }
 
     private static Result seeOther(String text) {
-        return new Result(303, null, new byte[0], "/?saved=1", true, text);
+        return new Result(303, null, new byte[0], "/?saved=1", true, text, null, false, false);
+    }
+
+    private static Result seePicture(byte[] image) {
+        return new Result(303, null, new byte[0], "/?wallpaper=1", false, null, image, false, false);
+    }
+
+    private static Result seeClear() {
+        return new Result(303, null, new byte[0], "/?wallpaper=0", false, null, null, true, false);
+    }
+
+    private static Result servePicture() {
+        return new Result(200, "image/jpeg", new byte[0], null, false, null, null, false, true);
+    }
+
+    static Result jpeg(byte[] image) {
+        return new Result(200, "image/jpeg", image, null, false, null, null, false, false);
+    }
+
+    static Result failed() {
+        return plain(500, "Could not save.\n");
+    }
+
+    /** The picture was not a JPEG, PNG or WebP this TV can show. */
+    static Result pictureRejected() {
+        return new Result(303, null, new byte[0], "/?wallpaper=bad", false, null, null, false, false);
     }
 
     private static Result plain(int status, String text) {
-        return new Result(status, "text/plain; charset=utf-8", text.getBytes(StandardCharsets.UTF_8), null, false, null);
+        return new Result(status, "text/plain; charset=utf-8", text.getBytes(StandardCharsets.UTF_8),
+                null, false, null, null, false, false);
     }
 
-    private static byte[] page(String current, boolean saved) {
+    /** Empty when the page is just open. saved, picture, theme or bad after a save. */
+    private static String notice(String target) {
+        if ("/".equals(target)) return "";
+        if ("/?saved=1".equals(target)) return "saved";
+        if ("/?wallpaper=1".equals(target)) return "picture";
+        if ("/?wallpaper=0".equals(target)) return "theme";
+        if ("/?wallpaper=bad".equals(target)) return "bad";
+        return null;
+    }
+
+    private static Result wallpaper(byte[] request, int end, String[] lines) {
+        int length = contentLength(request, end);
+        if (length < 0 || length > MAX_PICTURE) return pictureRejected();
+        int bodyAt = end + HEADER_END.length;
+        if (request.length < bodyAt + length) return pictureRejected();
+        String type = header(lines, "content-type");
+        if (type != null && type.toLowerCase(Locale.US).startsWith("multipart/")) {
+            byte[] body = new byte[length];
+            System.arraycopy(request, bodyAt, body, 0, length);
+            try {
+                return seePicture(picture(body, type));
+            } catch (IllegalArgumentException bad) {
+                return pictureRejected();
+            }
+        }
+        String form = new String(request, bodyAt, length, StandardCharsets.US_ASCII);
+        return clearing(form) ? seeClear() : pictureRejected();
+    }
+
+    /** A picture upload may be larger than a reminder form. Anything else stays at {@link #MAX_BODY}. */
+    private static int bodyCap(byte[] head, int end) {
+        String first = new String(head, 0, end, StandardCharsets.ISO_8859_1);
+        int line = first.indexOf("\r\n");
+        String start = line < 0 ? first : first.substring(0, line);
+        return start.startsWith("POST /wallpaper ") ? MAX_PICTURE : MAX_BODY;
+    }
+
+    private static byte[] page(String current, String notice, boolean pictureOn) {
         String[] lines = split(current);
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">");
         html.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-        html.append("<title>Reminders</title><style>");
+        html.append("<title>");
+        html.append(title(notice));
+        html.append("</title><style>");
         html.append("body{font:18px/1.4 sans-serif;margin:24px;background:#111;color:#fff;}");
+        html.append("h2{font-size:22px;margin:32px 0 0;}");
         html.append("p{color:#bbb;}label{display:block;margin-top:14px;color:#bbb;font-size:14px;}");
-        html.append("input{width:100%;box-sizing:border-box;font-size:18px;padding:12px;margin-top:6px;}");
-        html.append("button{font-size:18px;padding:12px 20px;margin-top:18px;}");
+        html.append("input{width:100%;box-sizing:border-box;font-size:18px;padding:12px;margin-top:6px;border:0;border-radius:8px;}");
+        html.append("input[type=file]{background:#fff;color:#111;}");
+        html.append("button{font-size:18px;font-weight:700;padding:14px 20px;margin-top:18px;width:100%;border:0;border-radius:10px;background:#fff;color:#111;}");
+        html.append("button.quiet{background:#2a2a2a;color:#fff;}");
+        html.append(".saved{background:#123524;border:3px solid #2BB673;border-radius:14px;padding:18px 16px;margin:16px 0 8px;}");
+        html.append(".saved h2{margin:0 0 8px;font-size:28px;line-height:1.2;color:#7DDBA8;}");
+        html.append(".bad{background:#3a1a1a;border:3px solid #e06a6a;border-radius:14px;padding:18px 16px;margin:16px 0 8px;}");
+        html.append(".bad h2{margin:0;font-size:28px;line-height:1.2;color:#f0b4b4;}");
+        html.append(".saved p,.saved li,.bad p{color:#fff;}");
+        html.append(".saved p,.bad p{margin:0;font-size:17px;}");
+        html.append(".saved ul{margin:12px 0 0;padding-left:20px;}");
+        html.append(".saved li{margin:6px 0;font-size:18px;}");
+        html.append("img{width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-top:12px;background:#000;}");
         html.append("</style></head><body><h1>Reminders</h1>");
         html.append("<p>Up to five lines. A blank line is hidden on the TV.</p>");
-        if (saved) html.append("<p>Saved. Home updates if it is on screen, or the next time you open it.</p>");
+        if ("saved".equals(notice)) html.append(savedBanner(lines));
         html.append("<form method=\"post\" action=\"/\">");
         for (int i = 0; i < MAX_LINES; i++) {
             String value = i < lines.length ? lines[i] : "";
@@ -165,8 +264,60 @@ final class EditorPage {
             html.append("\" autocomplete=\"off\" autocapitalize=\"off\" value=\"");
             html.append(escape(value)).append("\"></label>");
         }
-        html.append("<button type=\"submit\">Save on the TV</button></form></body></html>");
+        html.append("<button type=\"submit\">Save on the TV</button></form>");
+        html.append(wallpaperSection(notice, pictureOn));
+        html.append("</body></html>");
         return html.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String title(String notice) {
+        if ("saved".equals(notice)) return "Saved on the TV";
+        if ("picture".equals(notice)) return "Picture saved on the TV";
+        if ("bad".equals(notice)) return "Picture not used";
+        return "Reminders";
+    }
+
+    private static String wallpaperSection(String notice, boolean pictureOn) {
+        StringBuilder html = new StringBuilder();
+        html.append("<h2>Wallpaper</h2>");
+        html.append("<p>One picture from this phone, behind the clock. A dark JPEG, PNG or WebP works best. It stays until you put the theme picture back.</p>");
+        if ("picture".equals(notice)) {
+            html.append("<div class=\"saved\" role=\"status\"><h2>Picture saved on the TV</h2>");
+            html.append("<p>Home is showing it behind the clock.</p></div>");
+        } else if ("theme".equals(notice)) {
+            html.append("<div class=\"saved\" role=\"status\"><h2>Theme picture restored</h2>");
+            html.append("<p>Home is using its theme picture again.</p></div>");
+        } else if ("bad".equals(notice)) {
+            html.append("<div class=\"bad\" role=\"status\"><h2>That picture was not used</h2>");
+            html.append("<p>Choose a JPEG, PNG or WebP under 8 MB.</p></div>");
+        }
+        if (pictureOn) {
+            html.append("<img src=\"/wallpaper\" alt=\"The picture Home is showing\">");
+            html.append("<form method=\"post\" action=\"/wallpaper\">");
+            html.append("<button class=\"quiet\" type=\"submit\" name=\"clear\" value=\"1\">Use the theme picture</button></form>");
+        }
+        html.append("<form method=\"post\" action=\"/wallpaper\" enctype=\"multipart/form-data\">");
+        html.append("<label>Picture<input type=\"file\" name=\"picture\" accept=\"image/jpeg,image/png,image/webp\" required></label>");
+        html.append("<button type=\"submit\">Use this picture</button></form>");
+        return html.toString();
+    }
+
+    /** The confirmation the phone sees after a save. It lists exactly what Home will show. */
+    private static String savedBanner(String[] lines) {
+        StringBuilder html = new StringBuilder();
+        html.append("<div class=\"saved\" role=\"status\">");
+        html.append("<h2>Saved on the TV</h2>");
+        if (lines.length == 0) {
+            html.append("<p>Nothing is listed. Blank lines stay hidden.</p>");
+        } else {
+            html.append("<p>Home now shows these lines:</p><ul>");
+            for (String line : lines) {
+                html.append("<li>").append(escape(line)).append("</li>");
+            }
+            html.append("</ul>");
+        }
+        html.append("</div>");
+        return html.toString();
     }
 
     static String escape(String value) {
@@ -202,6 +353,80 @@ final class EditorPage {
         return fields;
     }
 
+    /** The uploaded picture. A missing part, or a file that is not a JPEG, PNG or WebP, is refused. */
+    static byte[] picture(byte[] body, String contentType) {
+        String boundary = boundaryOf(contentType);
+        if (boundary == null || boundary.isEmpty() || boundary.length() > 120) {
+            throw new IllegalArgumentException("boundary");
+        }
+        byte[] dash = ("--" + boundary).getBytes(StandardCharsets.ISO_8859_1);
+        int at = indexOf(body, dash, 0);
+        while (at >= 0) {
+            int part = at + dash.length;
+            if (part + 1 < body.length && body[part] == '-' && body[part + 1] == '-') break;
+            if (part + 1 < body.length && body[part] == '\r' && body[part + 1] == '\n') part += 2;
+            int next = indexOf(body, dash, part);
+            if (next < 0) throw new IllegalArgumentException("part");
+            int headerEnd = indexOf(body, HEADER_END, part);
+            if (headerEnd < 0 || headerEnd > next) throw new IllegalArgumentException("part");
+            String headers = new String(body, part, headerEnd - part, StandardCharsets.ISO_8859_1);
+            int dataAt = headerEnd + HEADER_END.length;
+            int dataEnd = next - 2;
+            if (namedPicture(headers) && dataEnd >= dataAt) {
+                byte[] file = new byte[dataEnd - dataAt];
+                System.arraycopy(body, dataAt, file, 0, file.length);
+                if (file.length == 0 || !image(file)) throw new IllegalArgumentException("image");
+                return file;
+            }
+            at = next;
+        }
+        throw new IllegalArgumentException("picture");
+    }
+
+    private static boolean namedPicture(String headers) {
+        String lower = headers.toLowerCase(Locale.US);
+        return lower.contains("name=\"picture\"") || lower.contains("name=picture");
+    }
+
+    static boolean image(byte[] file) {
+        if (file.length >= 3 && (file[0] & 0xFF) == 0xFF && (file[1] & 0xFF) == 0xD8 && (file[2] & 0xFF) == 0xFF) {
+            return true;
+        }
+        if (file.length >= 8 && (file[0] & 0xFF) == 0x89 && file[1] == 0x50 && file[2] == 0x4E && file[3] == 0x47) {
+            return true;
+        }
+        return file.length >= 12 && file[0] == 'R' && file[1] == 'I' && file[2] == 'F' && file[3] == 'F'
+                && file[8] == 'W' && file[9] == 'E' && file[10] == 'B' && file[11] == 'P';
+    }
+
+    private static boolean clearing(String form) {
+        try {
+            for (String part : form.split("&", -1)) {
+                int eq = part.indexOf('=');
+                String key = decode(eq < 0 ? part : part.substring(0, eq));
+                String value = decode(eq < 0 ? "" : part.substring(eq + 1));
+                if ("clear".equals(key) && "1".equals(value)) return true;
+            }
+        } catch (IllegalArgumentException bad) {
+            return false;
+        }
+        return false;
+    }
+
+    private static String boundaryOf(String contentType) {
+        if (contentType == null) return null;
+        int at = contentType.toLowerCase(Locale.US).indexOf("boundary=");
+        if (at < 0) return null;
+        String value = contentType.substring(at + "boundary=".length()).trim();
+        if (value.startsWith("\"")) {
+            int end = value.indexOf('"', 1);
+            return end < 0 ? null : value.substring(1, end);
+        }
+        int semi = value.indexOf(';');
+        if (semi >= 0) value = value.substring(0, semi).trim();
+        return value;
+    }
+
     private static String decode(String raw) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream(raw.length());
         for (int i = 0; i < raw.length(); i++) {
@@ -221,7 +446,8 @@ final class EditorPage {
                 throw new IllegalArgumentException("char");
             }
         }
-        return bytes.toString(StandardCharsets.UTF_8);
+        // toString(Charset) is API 33. This TV is Android 11.
+        return new String(bytes.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private static int hex(char c) {
@@ -236,7 +462,7 @@ final class EditorPage {
         String head = new String(request, 0, headerEnd, StandardCharsets.ISO_8859_1);
         String value = header(head.split("\r\n", -1), "content-length");
         if (value == null) return Integer.MIN_VALUE;
-        if (value.isEmpty() || value.length() > 6) return -1;
+        if (value.isEmpty() || value.length() > 8) return -1;
         int n = 0;
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
@@ -302,8 +528,12 @@ final class EditorPage {
     }
 
     private static int indexOf(byte[] hay, byte[] needle) {
-        if (needle.length == 0 || hay.length < needle.length) return -1;
-        for (int i = 0; i <= hay.length - needle.length; i++) {
+        return indexOf(hay, needle, 0);
+    }
+
+    private static int indexOf(byte[] hay, byte[] needle, int from) {
+        if (needle.length == 0 || from < 0 || hay.length < from + needle.length) return -1;
+        for (int i = from; i <= hay.length - needle.length; i++) {
             boolean match = true;
             for (int j = 0; j < needle.length; j++) {
                 if (hay[i + j] != needle[j]) {

@@ -7,8 +7,11 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
 import android.text.format.DateFormat;
 
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 
@@ -19,7 +22,8 @@ public final class NowProvider extends ContentProvider {
     /** Names and order Home asks for. */
     static final String[] COLUMNS = {
             "symbol", "temperature", "condition", "feels", "place", "metrics",
-            "event_kicker", "event_title", "event_when", "prayers", "reminders", "calendar", "forecast"
+            "event_kicker", "event_title", "event_when", "prayers", "reminders", "calendar", "forecast",
+            "wallpaper"
     };
 
     @Override
@@ -61,7 +65,8 @@ public final class NowProvider extends ContentProvider {
                     reminders,
                     MonthMarks.grid(LocalDate.now(ZoneId.systemDefault()),
                             prefs.getString("us_marks", ""), prefs.getString("us_month", "")),
-                    prefs.getString("forecast", "")
+                    prefs.getString("forecast", ""),
+                    Wallpaper.on(ctx) ? "phone" : ""
             });
         }
         cursor.setNotificationUri(ctx.getContentResolver(), URI);
@@ -71,6 +76,15 @@ public final class NowProvider extends ContentProvider {
 
     private static String reminders(Context ctx) {
         return Reminders.text(ctx);
+    }
+
+    @Override
+    public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+        if (uri == null || !"wallpaper".equals(uri.getLastPathSegment())) throw new FileNotFoundException();
+        if (mode != null && mode.contains("w")) throw new FileNotFoundException();
+        File file = Wallpaper.file(getContext());
+        if (file == null) throw new FileNotFoundException();
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
     @Override

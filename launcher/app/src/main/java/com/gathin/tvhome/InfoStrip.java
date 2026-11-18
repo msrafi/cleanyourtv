@@ -34,7 +34,8 @@ final class InfoStrip {
     static final String META = "com.gathin.tvhome.info";
     private static final String[] COLUMNS = {
             "symbol", "temperature", "condition", "feels", "place", "metrics",
-            "event_kicker", "event_title", "event_when", "prayers", "reminders", "calendar", "forecast"
+            "event_kicker", "event_title", "event_when", "prayers", "reminders", "calendar", "forecast",
+            "wallpaper"
     };
     private static final int FORECAST_DAYS = 5;
     private static final int PRAYER_ROWS = 6;
@@ -77,6 +78,13 @@ final class InfoStrip {
     private final MonthGrid monthGrid;
     private final LinearLayout strip;
     private boolean watching;
+    private boolean phoneWallpaper;
+    private PhonePicture phonePicture;
+
+    /** Home shows the phone's picture, or goes back to the theme, when this changes. */
+    interface PhonePicture {
+        void show(boolean on);
+    }
 
     private InfoStrip(Activity activity, Uri uri) {
         this.ctx = activity;
@@ -227,10 +235,8 @@ final class InfoStrip {
         monthGrid = new MonthGrid(activity, density);
         LinearLayout calendarColumn = column(activity);
         calendarColumn.setGravity(Gravity.CENTER_HORIZONTAL);
-        calendarColumn.addView(heading(activity, "Calendar"));
         LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        gridParams.topMargin = dp(density, 8);
         calendarColumn.addView(monthGrid.view(), gridParams);
         LinearLayout.LayoutParams middleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         middleParams.setMarginStart(dp(density, 16));
@@ -263,6 +269,10 @@ final class InfoStrip {
         } catch (PackageManager.NameNotFoundException missing) {
             return null;
         }
+    }
+
+    void onPhoneWallpaper(PhonePicture picture) {
+        phonePicture = picture;
     }
 
     /** Home is in front: read now, then again each minute and whenever the other app updates the row. */
@@ -333,10 +343,18 @@ final class InfoStrip {
         applyReminders(values.length > 10 ? values[10] : "");
         monthGrid.bind(values.length > 11 ? values[11] : "");
         applyForecast(values.length > 12 ? values[12] : "");
+        applyWallpaper(values.length > 13 ? values[13] : "");
         lowerBand.setVisibility(View.VISIBLE);
         boolean hasWeather = !blank(values[1]).isEmpty();
         boolean hasEvent = !blank(values[6]).isEmpty() || !blank(values[7]).isEmpty();
         show(hasWeather, hasEvent, hasPrayers);
+    }
+
+    private void applyWallpaper(String value) {
+        boolean on = "phone".equals(value);
+        if (on == phoneWallpaper) return;
+        phoneWallpaper = on;
+        if (phonePicture != null) phonePicture.show(on);
     }
 
     /** Fills the six prayer rows from "Name\ttime" lines. A third field of "next" marks the one still ahead. */

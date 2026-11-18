@@ -588,6 +588,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         racePager = findViewById(R.id.racePager);
         gameDay = GameDay.create(this, cfg.gameDay, handler, this::updatePanel);
         infoStrip = InfoStrip.attach(this);
+        if (infoStrip != null) infoStrip.onPhoneWallpaper(wallpaperPlayer::phone);
         placePrayerLineBelowClock();
         // The rotation runs on the clock that never jumps: setting the TV's time must not stall or stretch a turn.
         rotationStart = SystemClock.elapsedRealtime();

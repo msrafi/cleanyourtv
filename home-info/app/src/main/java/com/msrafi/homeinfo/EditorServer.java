@@ -11,6 +11,7 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,8 +47,8 @@ final class EditorServer {
                 Socket socket = server.accept();
                 try {
                     exchange(app, socket);
-                } catch (IOException ignored) {
-                    // One phone closing early leaves the page up for the next one.
+                } catch (Throwable ignored) {
+                    // One phone closing early, or one bad save, leaves the page up for the next one.
                 } finally {
                     try {
                         socket.close();
@@ -62,16 +63,37 @@ final class EditorServer {
     }
 
     private static void exchange(Context app, Socket socket) throws IOException {
-        socket.setSoTimeout(4000);
-        EditorPage.Result result;
+        // A phone often connects, then pauses before the request. Closing that pause used to
+        // leave the browser with an empty reply.
+        socket.setSoTimeout(60_000);
+        byte[] request;
         try {
-            byte[] request = EditorPage.readMessage(socket.getInputStream());
-            result = EditorPage.reply(request, Reminders.text(app), socket.getInetAddress());
+            request = EditorPage.readMessage(socket.getInputStream());
+        } catch (SocketTimeoutException idle) {
+            return;
         } catch (IOException ignored) {
-            result = EditorPage.reply(new byte[0], "", socket.getInetAddress());
+            request = new byte[0];
         }
-        if (result.write) Reminders.save(app, result.text);
+        if (request.length == 0) return;
+        EditorPage.Result result = EditorPage.reply(request, Reminders.text(app), socket.getInetAddress(),
+                Wallpaper.on(app));
+        try {
+            if (result.write) Reminders.save(app, result.text);
+            if (result.image != null) {
+                if (!Wallpaper.store(app, result.image)) result = EditorPage.pictureRejected();
+            } else if (result.clearPicture) {
+                Wallpaper.clear(app);
+            }
+            if (result.servePicture) {
+                byte[] jpeg = Wallpaper.bytes(app);
+                result = jpeg == null ? EditorPage.pictureRejected() : EditorPage.jpeg(jpeg);
+            }
+        } catch (RuntimeException failed) {
+            Log.w(TAG, "reminders page could not save", failed);
+            result = result.image != null || result.clearPicture ? EditorPage.pictureRejected() : EditorPage.failed();
+        }
         write(socket.getOutputStream(), result);
+        Log.i(TAG, "reminders page " + result.status);
     }
 
     private static void write(OutputStream out, EditorPage.Result result) throws IOException {

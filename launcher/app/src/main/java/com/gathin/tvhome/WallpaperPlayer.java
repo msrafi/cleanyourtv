@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.net.Uri;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -16,7 +17,9 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -31,6 +34,9 @@ import java.util.concurrent.Executors;
 
 /** Displays and rotates a theme's local wallpaper images while Home is visible. */
 final class WallpaperPlayer {
+    /** The picture chosen on the phone page. Home reads it; it never fetches it. */
+    private static final Uri PHONE = Uri.parse("content://com.msrafi.homeinfo.now/wallpaper");
+    private final Context context;
     private final FrameLayout root;
     private final ImageView image;
     private final int backgroundColor;
@@ -51,6 +57,8 @@ final class WallpaperPlayer {
     private boolean active;
     private boolean closed;
     private boolean loading;
+    /** A picture from the phone is on screen, so the theme collection waits. */
+    private boolean phoneOn;
     private String displayed = "";
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
     private final TextView caption;
@@ -63,6 +71,7 @@ final class WallpaperPlayer {
     private int[] sun;
 
     WallpaperPlayer(Context context, FrameLayout root, Config config) {
+        this.context = context;
         this.root = root;
         backgroundColor = config.backgroundColor;
         files = new ArrayList<>(config.wallpapers);
@@ -128,6 +137,48 @@ final class WallpaperPlayer {
         }
     }
 
+    /**
+     * Show the picture from the phone, or go back to the theme. Called when the phone page saves.
+     * A repeat of the same choice does nothing.
+     */
+    void phone(boolean on) {
+        if (closed || on == phoneOn) return;
+        phoneOn = on;
+        if (!on) {
+            if (files.isEmpty()) {
+                Bitmap old = current;
+                image.setImageDrawable(null);
+                current = null;
+                displayed = "";
+                root.setBackgroundColor(backgroundColor);
+                if (old != null) image.postDelayed(old::recycle, 500);
+                return;
+            }
+            ensureImage();
+            showFirst();
+            return;
+        }
+        loading = true;
+        decoder.execute(() -> {
+            Bitmap bitmap = openPhone();
+            root.post(() -> {
+                loading = false;
+                if (closed || !phoneOn) {
+                    if (bitmap != null) bitmap.recycle();
+                    return;
+                }
+                if (bitmap == null) {
+                    phoneOn = false;
+                    return;
+                }
+                ensureImage();
+                show(bitmap);
+                displayed = "phone";
+                if (caption != null) caption.setAlpha(0f);
+            });
+        });
+    }
+
     void start() {
         active = true;
         update();
@@ -166,7 +217,7 @@ final class WallpaperPlayer {
     }
 
     void update() {
-        if (!active || closed || loading || files.isEmpty()) return;
+        if (phoneOn || !active || closed || loading || files.isEmpty()) return;
         String previous = preferences.getString("image", "");
         // A picture outside the time of day's group (the group changed) is replaced at once, not after the interval.
         List<File> playable = playable();
@@ -182,7 +233,7 @@ final class WallpaperPlayer {
             Bitmap bitmap = decode(next);
             root.post(() -> {
                 loading = false;
-                if (closed || !active) {
+                if (closed || !active || phoneOn) {
                     if (bitmap != null) bitmap.recycle();
                     return;
                 }
@@ -269,6 +320,57 @@ final class WallpaperPlayer {
         if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
     }
 
+    private void ensureImage() {
+        if (image.getParent() == null) {
+            root.addView(image, 0, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+    }
+
+    private Bitmap openPhone() {
+        try (InputStream in = context.getContentResolver().openInputStream(PHONE)) {
+            if (in == null) return null;
+            ByteArrayOutputStream raw = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            int total = 0;
+            while ((n = in.read(buf)) >= 0) {
+                total += n;
+                if (total > 2 * 1024 * 1024) return null;
+                raw.write(buf, 0, n);
+            }
+            return decode(raw.toByteArray());
+        } catch (Exception | OutOfMemoryError failure) {
+            return null;
+        }
+    }
+
+    private Bitmap decode(byte[] raw) {
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(raw, 0, raw.length, options);
+            int width = options.outWidth, height = options.outHeight;
+            if (width <= 0 || height <= 0) return null;
+            int sample = WallpaperSize.sampleSize(width, height, this.width, this.height);
+            if (!WallpaperSize.accepted(width / sample, height / sample)) return null;
+            options.inJustDecodeBounds = false;
+            options.inSampleSize = sample;
+            int[] scale = WallpaperSize.coverScale(width / sample, height / sample, this.width, this.height);
+            if (scale != null) {
+                options.inScaled = true;
+                options.inDensity = scale[0];
+                options.inTargetDensity = scale[1];
+            }
+            options.inPreferredConfig = bitmapConfig;
+            options.inMutable = dimColor != 0;
+            Bitmap decoded = BitmapFactory.decodeByteArray(raw, 0, raw.length, options);
+            return finish(decoded);
+        } catch (Exception | OutOfMemoryError failure) {
+            return null;
+        }
+    }
+
     private Bitmap decode(File file) {
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
@@ -288,17 +390,20 @@ final class WallpaperPlayer {
             }
             options.inPreferredConfig = bitmapConfig;
             options.inMutable = dimColor != 0;
-            Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
-            if (decoded == null) return null;
-            if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
-            // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
-            // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
-            Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);
-            if (gpu == null) return decoded;
-            decoded.recycle();
-            return gpu;
+            return finish(BitmapFactory.decodeFile(file.getPath(), options));
         } catch (Exception | OutOfMemoryError failure) {
             return null;
         }
+    }
+
+    private Bitmap finish(Bitmap decoded) {
+        if (decoded == null) return null;
+        if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+        // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
+        // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
+        Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);
+        if (gpu == null) return decoded;
+        decoded.recycle();
+        return gpu;
     }
 }
