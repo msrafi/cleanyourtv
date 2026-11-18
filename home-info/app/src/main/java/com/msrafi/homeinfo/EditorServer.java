@@ -75,8 +75,9 @@ final class EditorServer {
             request = new byte[0];
         }
         if (request.length == 0) return;
+        byte[] stored = Wallpaper.bytes(app);
         EditorPage.Result result = EditorPage.reply(request, Reminders.text(app), socket.getInetAddress(),
-                Wallpaper.on(app));
+                stored != null, stored == null ? "" : EditorPage.pictureDetail(stored));
         try {
             if (result.write) Reminders.save(app, result.text);
             if (result.image != null) {

@@ -115,6 +115,10 @@ final class EditorPage {
     }
 
     static Result reply(byte[] request, String current, InetAddress remote, boolean pictureOn) {
+        return reply(request, current, remote, pictureOn, "");
+    }
+
+    static Result reply(byte[] request, String current, InetAddress remote, boolean pictureOn, String pictureDetail) {
         if (!allowed(remote)) return plain(403, "This page is only for the home Wi-Fi.\n");
         if (request == null) return plain(400, "Bad request.\n");
         int end = indexOf(request, HEADER_END);
@@ -135,7 +139,7 @@ final class EditorPage {
             }
             String notice = notice(target);
             if (notice == null) return plain(404, "Not found.\n");
-            return html(page(current, notice, pictureOn));
+            return html(page(current, notice, pictureOn, pictureDetail));
         }
         if (!"POST".equals(method)) return plain(405, "Use the form.\n");
         if ("/wallpaper".equals(target)) return wallpaper(request, end, lines);
@@ -229,7 +233,7 @@ final class EditorPage {
         return start.startsWith("POST /wallpaper ") ? MAX_PICTURE : MAX_BODY;
     }
 
-    private static byte[] page(String current, String notice, boolean pictureOn) {
+    private static byte[] page(String current, String notice, boolean pictureOn, String pictureDetail) {
         String[] lines = split(current);
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">");
@@ -252,6 +256,8 @@ final class EditorPage {
         html.append(".saved p,.bad p{margin:0;font-size:17px;}");
         html.append(".saved ul{margin:12px 0 0;padding-left:20px;}");
         html.append(".saved li{margin:6px 0;font-size:18px;}");
+        html.append(".spec{color:#fff;font-size:22px;margin:10px 0;}");
+        html.append("b{color:#fff;}");
         html.append("img{width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-top:12px;background:#000;}");
         html.append("</style></head><body><h1>Reminders</h1>");
         html.append("<p>Up to five lines. A blank line is hidden on the TV.</p>");
@@ -265,7 +271,7 @@ final class EditorPage {
             html.append(escape(value)).append("\"></label>");
         }
         html.append("<button type=\"submit\">Save on the TV</button></form>");
-        html.append(wallpaperSection(notice, pictureOn));
+        html.append(wallpaperSection(notice, pictureOn, pictureDetail));
         html.append("</body></html>");
         return html.toString().getBytes(StandardCharsets.UTF_8);
     }
@@ -277,10 +283,44 @@ final class EditorPage {
         return "Reminders";
     }
 
-    private static String wallpaperSection(String notice, boolean pictureOn) {
+    /** Width, height and file size of a stored JPEG, or empty when the size cannot be read. */
+    static String pictureDetail(byte[] jpeg) {
+        int[] size = jpegSize(jpeg);
+        if (size == null) return "";
+        int kb = Math.max(1, (jpeg.length + 512) / 1024);
+        return size[0] + " × " + size[1] + ", " + kb + " KB";
+    }
+
+    private static int[] jpegSize(byte[] jpeg) {
+        if (jpeg == null || jpeg.length < 4 || (jpeg[0] & 0xFF) != 0xFF || (jpeg[1] & 0xFF) != 0xD8) return null;
+        int i = 2;
+        while (i + 3 < jpeg.length) {
+            if ((jpeg[i] & 0xFF) != 0xFF) return null;
+            while (i < jpeg.length && (jpeg[i] & 0xFF) == 0xFF) i++;
+            if (i >= jpeg.length) return null;
+            int marker = jpeg[i++] & 0xFF;
+            if (marker == 0xD9 || marker == 0xDA) return null;
+            if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8)) continue;
+            if (i + 1 >= jpeg.length) return null;
+            int length = ((jpeg[i] & 0xFF) << 8) | (jpeg[i + 1] & 0xFF);
+            if (length < 2 || i + length > jpeg.length) return null;
+            if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                if (length < 7) return null;
+                int height = ((jpeg[i + 3] & 0xFF) << 8) | (jpeg[i + 4] & 0xFF);
+                int width = ((jpeg[i + 5] & 0xFF) << 8) | (jpeg[i + 6] & 0xFF);
+                if (width <= 0 || height <= 0) return null;
+                return new int[] {width, height};
+            }
+            i += length;
+        }
+        return null;
+    }
+
+    private static String wallpaperSection(String notice, boolean pictureOn, String pictureDetail) {
         StringBuilder html = new StringBuilder();
         html.append("<h2>Wallpaper</h2>");
-        html.append("<p>One picture from this phone, behind the clock. A dark JPEG, PNG or WebP works best. It stays until you put the theme picture back.</p>");
+        html.append("<p class=\"spec\"><b>1920 × 1080</b> · under <b>300 KB</b></p>");
+        html.append("<p>A dark JPEG, PNG or WebP, behind the clock. A larger picture is scaled down. Up to 8 MB. It stays until you put the theme picture back.</p>");
         if ("picture".equals(notice)) {
             html.append("<div class=\"saved\" role=\"status\"><h2>Picture saved on the TV</h2>");
             html.append("<p>Home is showing it behind the clock.</p></div>");
@@ -289,9 +329,12 @@ final class EditorPage {
             html.append("<p>Home is using its theme picture again.</p></div>");
         } else if ("bad".equals(notice)) {
             html.append("<div class=\"bad\" role=\"status\"><h2>That picture was not used</h2>");
-            html.append("<p>Choose a JPEG, PNG or WebP under 8 MB.</p></div>");
+            html.append("<p>Use 1920 × 1080, a JPEG, PNG or WebP under 8 MB.</p></div>");
         }
         if (pictureOn) {
+            if (pictureDetail != null && !pictureDetail.isEmpty()) {
+                html.append("<p>On the TV now: ").append(escape(pictureDetail)).append("</p>");
+            }
             html.append("<img src=\"/wallpaper\" alt=\"The picture Home is showing\">");
             html.append("<form method=\"post\" action=\"/wallpaper\">");
             html.append("<button class=\"quiet\" type=\"submit\" name=\"clear\" value=\"1\">Use the theme picture</button></form>");

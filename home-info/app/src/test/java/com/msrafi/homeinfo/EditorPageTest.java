@@ -88,6 +88,8 @@ public class EditorPageTest {
         String html = new String(pageOf("GET / HTTP/1.1\r\nHost: 192.168.1.20:8787\r\n\r\n", "Nuha"),
                 StandardCharsets.UTF_8);
         assertTrue(html.contains("Use this picture"));
+        assertTrue(html.contains("1920 × 1080"));
+        assertTrue(html.contains("300 KB"));
         assertTrue(html.contains("accept=\"image/jpeg,image/png,image/webp\""));
         assertFalse(html.contains("Use the theme picture"));
     }
@@ -100,6 +102,21 @@ public class EditorPageTest {
         String html = new String(result.body, StandardCharsets.UTF_8);
         assertTrue(html.contains("Use the theme picture"));
         assertTrue(html.contains("src=\"/wallpaper\""));
+        EditorPage.Result sized = EditorPage.reply(
+                "GET / HTTP/1.1\r\nHost: 192.168.1.20:8787\r\n\r\n".getBytes(StandardCharsets.US_ASCII),
+                "", InetAddress.getByName("192.168.1.20"), true, "1920 × 1080, 240 KB");
+        assertTrue(new String(sized.body, StandardCharsets.UTF_8).contains("On the TV now: 1920 × 1080, 240 KB"));
+    }
+
+    @Test
+    public void aStoredJpegReportsItsSize() {
+        byte[] jpeg = new byte[] {
+                (byte) 0xFF, (byte) 0xD8,
+                (byte) 0xFF, (byte) 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x04, 0x00, 0x08, 0x01, 0x01, 0x11, 0x00,
+                (byte) 0xFF, (byte) 0xD9
+        };
+        assertEquals("8 × 4, 1 KB", EditorPage.pictureDetail(jpeg));
+        assertEquals("", EditorPage.pictureDetail(new byte[] {1, 2, 3}));
     }
 
     @Test
