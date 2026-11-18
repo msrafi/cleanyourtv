@@ -15,11 +15,11 @@ Beside the clock, once this app is installed:
 
 The place is Iselin, NJ, in Fahrenheit and mph. That is `app/src/main/res/values/config.xml`. Set `weather_fahrenheit` to false for Celsius and km/h.
 
-The three rows are the next US holiday, the next India holiday, and today's Hijri date. The holidays come from the public Google calendars in `calendar_feeds`. The Hijri date is the Umm al-Qura civil calendar, worked out on the TV.
+The column shows today's Hijri date, then the next India holiday. The time in India sits under those two, in the same light numerals as the clock. The US holiday feed is still read, and it marks the month grid only. The holidays come from the public Google calendars in `calendar_feeds`. The Hijri date is the Umm al-Qura civil calendar, worked out on the TV.
 
 A third column lists today's Fajr, sunrise, Dhuhr, Asr, Maghrib and Isha. The times come from Aladhan, with `prayer_method` and `prayer_school` in the same config file. The next time still ahead is shown in white. A failed fetch keeps the last times.
 
-Under the prayer line, Home lists up to five reminders. To their right is this month. US holidays from that same feed are gold, and Islamic days worked out on the TV are green: the 1st of each Hijri month, plus Ashura, Mawlid, Isra and Mi'raj, mid-Shaban, Ramadan, Laylat al-Qadr, Eid al-Fitr, the Day of Arafah, and Eid al-Adha. A local moon sighting can put an Islamic day one off. The lines in `reminders` are the first list. After that, a phone on the same Wi-Fi can change them: open `http://<tv ip>:8787`. The page answers only a home-network address, and a save from another website is refused. Do not forward port 8787 on the router. Once the page has saved a list, that list is what Home shows, including after this app is installed again. Clearing the app's data brings back the lines in the config file.
+Under the clock, three columns: up to five reminders, this month, and the important days. US holidays from that same feed are gold. The 1st of each Hijri month is blue, including Ramadan and Eid al-Fitr. The other Islamic days are green: Ashura, Mawlid, Isra and Mi'raj, mid-Shaban, Laylat al-Qadr, the Day of Arafah, and Eid al-Adha. A local moon sighting can put an Islamic day one off. The lines in `reminders` are the first list. After that, a phone on the same Wi-Fi can change them: open `http://<tv ip>:8787`. The page answers only a home-network address, and a save from another website is refused. Do not forward port 8787 on the router. Once the page has saved a list, that list is what Home shows, including after this app is installed again. Clearing the app's data brings back the lines in the config file.
 
 ## How it stays off the launcher's network
 

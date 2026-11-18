@@ -11,12 +11,12 @@
     <string name="prayer_method" translatable="false">2</string>
     <string name="prayer_school" translatable="false">1</string>
     <!-- Public Google holiday calendars, one per line: "Name|https://…ics".
-         The first line is the top row, the second the middle. Today's Hijri date is the bottom row. -->
+         The US feed marks the month grid and is not listed in the column. The India feed is the holiday line. Today's Hijri date is the line above it. -->
     <!-- The first list, up to five lines. A blank item is skipped. Once the phone page
          on this Wi-Fi (port 8787) saves a list, that list is what Home shows. -->
     <string-array name="reminders" translatable="false">
         <item>Farhan - Magnet School application by Friday</item>
-        <item>Rafi - tMobile Fix</item>
+        <item>Rafi - tMobile Fix Test Test Test Test Test Test Test Test Test</item>
         <item>Nuha - 11/30-9:30am:School meeting with Dr. Ayoso</item>
         <item>Sharmi - Get Eye Doc appointment</item>
     </string-array>

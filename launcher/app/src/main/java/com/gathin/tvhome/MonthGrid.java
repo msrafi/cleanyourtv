@@ -16,12 +16,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * This month, in the open space to the right of the reminders. US holidays are gold, Islamic days
- * are green, and today has a white ring. The launcher only draws the text it was given.
+ * This month, between the reminders and the important days. US holidays are gold, the first
+ * day of a Hijri month is blue, other Islamic days are green, and today has a white ring.
+ * The names sit in their own column. The launcher only draws the text it was given.
  */
 final class MonthGrid {
     private static final int US = 0xFFF5C16C;
     private static final int HIJRI = 0xFF2BB673;
+    private static final int MONTH = 0xFF6CB6F5;
     private static final int PLAIN = 0xB3FFFFFF;
     private static final int NOTES = 4;
     private static final String[] WEEK = {"S", "M", "T", "W", "T", "F", "S"};
@@ -29,6 +31,7 @@ final class MonthGrid {
     private final float density;
     private final int stroke;
     private final LinearLayout view;
+    private final LinearLayout notesColumn;
     private final TextView title;
     private final LinearLayout[] rows = new LinearLayout[6];
     private final TextView[] days = new TextView[42];
@@ -39,13 +42,13 @@ final class MonthGrid {
         this.stroke = Math.max(2, Math.round(density));
         view = column(activity);
         view.setFocusable(false);
-        title = label(activity, 12, 0xB3FFFFFF);
+        title = label(activity, 10, 0xB3FFFFFF);
         title.setLetterSpacing(0.18f);
         title.setAllCaps(true);
         view.addView(title);
         LinearLayout week = row(activity);
         for (String name : WEEK) {
-            TextView day = label(activity, 11, 0x80FFFFFF);
+            TextView day = label(activity, 9, 0x80FFFFFF);
             day.setGravity(Gravity.CENTER);
             week.addView(day, cell());
             day.setText(name);
@@ -57,24 +60,37 @@ final class MonthGrid {
         for (int r = 0; r < rows.length; r++) {
             rows[r] = row(activity);
             for (int c = 0; c < 7; c++) {
-                TextView day = label(activity, 14, PLAIN);
+                TextView day = label(activity, 10, PLAIN);
                 day.setGravity(Gravity.CENTER);
                 days[r * 7 + c] = day;
                 rows[r].addView(day, cell());
             }
             view.addView(rows[r]);
         }
+        notesColumn = column(activity);
+        notesColumn.setFocusable(false);
+        TextView notesTitle = label(activity, 12, 0xB3FFFFFF);
+        notesTitle.setLetterSpacing(0.18f);
+        notesTitle.setAllCaps(true);
+        notesTitle.setText("Important days");
+        notesColumn.addView(notesTitle);
         for (int i = 0; i < NOTES; i++) {
-            notes[i] = label(activity, 12, Color.WHITE);
+            notes[i] = label(activity, 13, Color.WHITE);
             notes[i].setSingleLine(true);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(196), ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.topMargin = dp(i == 0 ? 8 : 2);
-            view.addView(notes[i], params);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = dp(i == 0 ? 8 : 4);
+            notesColumn.addView(notes[i], params);
         }
     }
 
     LinearLayout view() {
         return view;
+    }
+
+    /** The named days, in their own column beside the month. */
+    LinearLayout notes() {
+        return notesColumn;
     }
 
     /** {@code yyyy-MM} and then {@code day \t kind \t us title \t hijri title}. An empty payload still draws the month. */
@@ -120,7 +136,7 @@ final class MonthGrid {
             cell.setText(Integer.toString(day));
             paint(cell, markKind[day], day == today.getDayOfMonth());
         }
-        List<Note> captions = captions(today.getDayOfMonth(), markUs, markHijri);
+        List<Note> captions = captions(today.getDayOfMonth(), markUs, markHijri, markKind);
         for (int i = 0; i < NOTES; i++) {
             if (i < captions.size()) {
                 notes[i].setText(captions.get(i).text);
@@ -131,12 +147,14 @@ final class MonthGrid {
                 notes[i].setVisibility(View.GONE);
             }
         }
+        notesColumn.setVisibility(captions.isEmpty() ? View.GONE : View.VISIBLE);
         view.setVisibility(View.VISIBLE);
     }
 
     private void paint(TextView cell, String kind, boolean today) {
         int color = PLAIN;
         int fill = Color.TRANSPARENT;
+        int ring = today ? Color.WHITE : Color.TRANSPARENT;
         if ("us".equals(kind)) {
             color = US;
             fill = 0x33F5C16C;
@@ -146,6 +164,14 @@ final class MonthGrid {
         } else if ("both".equals(kind)) {
             color = Color.WHITE;
             fill = 0x33F5C16C;
+        } else if ("start".equals(kind)) {
+            color = MONTH;
+            fill = 0x336CB6F5;
+        } else if ("us-start".equals(kind)) {
+            // Gold wash for the US holiday, blue numeral and ring for the Hijri month start.
+            color = MONTH;
+            fill = 0x33F5C16C;
+            if (!today) ring = MONTH;
         } else if (today) {
             color = Color.WHITE;
         }
@@ -154,7 +180,7 @@ final class MonthGrid {
             GradientDrawable disc = new GradientDrawable();
             disc.setShape(GradientDrawable.OVAL);
             disc.setColor(fill);
-            if (today) disc.setStroke(stroke, Color.WHITE);
+            if (ring != Color.TRANSPARENT) disc.setStroke(stroke, ring);
             cell.setBackground(disc);
         } else {
             cell.setBackground(null);
@@ -162,13 +188,16 @@ final class MonthGrid {
     }
 
     /** Up to four names. Days still ahead come first when the month has more marks than that. */
-    private static List<Note> captions(int today, String[] us, String[] hijri) {
+    private static List<Note> captions(int today, String[] us, String[] hijri, String[] kind) {
         List<Note> past = new ArrayList<>();
         List<Note> ahead = new ArrayList<>();
         for (int day = 1; day <= 31; day++) {
             List<Note> bucket = day >= today ? ahead : past;
             if (us[day] != null && !us[day].isEmpty()) bucket.add(new Note(US, day + "  " + us[day]));
-            if (hijri[day] != null && !hijri[day].isEmpty()) bucket.add(new Note(HIJRI, day + "  " + hijri[day]));
+            if (hijri[day] != null && !hijri[day].isEmpty()) {
+                boolean monthStart = "start".equals(kind[day]) || "us-start".equals(kind[day]);
+                bucket.add(new Note(monthStart ? MONTH : HIJRI, day + "  " + hijri[day]));
+            }
         }
         List<Note> shown = new ArrayList<>();
         if (ahead.size() >= NOTES) {
@@ -183,7 +212,7 @@ final class MonthGrid {
     }
 
     private LinearLayout.LayoutParams cell() {
-        return new LinearLayout.LayoutParams(dp(28), dp(28));
+        return new LinearLayout.LayoutParams(dp(20), dp(20));
     }
 
     private int dp(int value) {

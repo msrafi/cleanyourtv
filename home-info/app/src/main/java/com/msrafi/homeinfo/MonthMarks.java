@@ -37,7 +37,8 @@ final class MonthMarks {
 
     /**
      * First line is {@code yyyy-MM}. Each later line is
-     * {@code day \t us|hijri|both \t us title \t hijri title}.
+     * {@code day \t us|hijri|both|start|us-start \t us title \t hijri title}.
+     * {@code start} is the first day of a Hijri month. {@code us-start} is that day and a US holiday.
      * A US list from another month is ignored.
      */
     static String grid(LocalDate today, String usMarks, String usMonth) {
@@ -47,10 +48,16 @@ final class MonthMarks {
         out.append(month);
         for (int day = 1; day <= month.lengthOfMonth(); day++) {
             HijrahDate hijri = HijrahDate.from(month.atDay(day));
-            String islamic = islamic(hijri.get(ChronoField.MONTH_OF_YEAR), hijri.get(ChronoField.DAY_OF_MONTH));
+            int hijriMonth = hijri.get(ChronoField.MONTH_OF_YEAR);
+            int hijriDay = hijri.get(ChronoField.DAY_OF_MONTH);
+            String islamic = islamic(hijriMonth, hijriDay);
             String holiday = us.get(day);
             if (islamic == null && holiday == null) continue;
-            String kind = islamic != null && holiday != null ? "both" : islamic != null ? "hijri" : "us";
+            boolean monthStart = hijriDay == 1;
+            String kind = monthStart && holiday != null ? "us-start"
+                    : monthStart ? "start"
+                    : islamic != null && holiday != null ? "both"
+                    : islamic != null ? "hijri" : "us";
             out.append('\n').append(day).append('\t').append(kind).append('\t')
                     .append(holiday == null ? "" : holiday).append('\t')
                     .append(islamic == null ? "" : islamic);

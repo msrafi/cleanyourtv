@@ -41,8 +41,9 @@ final class Prayers {
 
     /**
      * One line per time. The prayer underway is "current" and the next prayer is "next", with the
-     * minutes still left until it ("1h 42m"). Sunrise is shown but is not a prayer. Marks are added
-     * only when {@code day} is the day {@code now} falls on.
+     * minutes still left until it ("1h 42m"). After Isha, the next prayer is tomorrow's Fajr.
+     * Sunrise is shown but is not a prayer. Marks are added only when {@code day} is the day
+     * {@code now} falls on.
      */
     static String lines(String raw, long now, ZoneId zone, String day, boolean hour24) {
         if (raw == null || raw.isEmpty()) return "";
@@ -61,6 +62,19 @@ final class Prayers {
                 else if (next == null) {
                     next = pair[0];
                     nextAt = at;
+                }
+            }
+            if (next == null) {
+                for (String entry : raw.split(";")) {
+                    String[] pair = entry.split("=", 2);
+                    if (pair.length == 2 && "Fajr".equals(pair[0])) {
+                        int at = minutes(pair[1]);
+                        if (at >= 0) {
+                            next = "Fajr";
+                            nextAt = at + 24 * 60;
+                        }
+                        break;
+                    }
                 }
             }
         }

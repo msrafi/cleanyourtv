@@ -18,14 +18,16 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.TextClock;
 import android.widget.TextView;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Weather, three calendar rows and today's prayer times beside the clock. Home only reads a row published by
- * com.msrafi.homeinfo. Nothing here opens a connection. The strip stays hidden until that app is installed.
+ * Weather, the Hijri date, the India holiday, the India clock and today's prayer times beside the clock.
+ * Home only reads a row published by com.msrafi.homeinfo. Nothing here opens a connection.
+ * The strip stays hidden until that app is installed.
  */
 final class InfoStrip {
     static final String PACKAGE = "com.msrafi.homeinfo";
@@ -66,7 +68,6 @@ final class InfoStrip {
     private final TextView metrics;
     private final TextView kicker;
     private final TextView title;
-    private final TextView when;
     private final LinearLayout prayers;
     private final TextView[] prayerName = new TextView[PRAYER_ROWS];
     private final TextView[] prayerTime = new TextView[PRAYER_ROWS];
@@ -97,7 +98,6 @@ final class InfoStrip {
         metrics = text(activity, 12, 0xA6FFFFFF);
         kicker = text(activity, 14, Color.WHITE);
         title = text(activity, 14, Color.WHITE);
-        when = text(activity, 14, Color.WHITE);
 
         weather = row(activity, density);
         weather.addView(bar(activity), barParams(density));
@@ -146,11 +146,19 @@ final class InfoStrip {
         event = row(activity, density);
         LinearLayout.LayoutParams eventBar = barParams(density);
         eventBar.setMarginStart(dp(density, 8));
+        eventBar.height = ViewGroup.LayoutParams.MATCH_PARENT;
         event.addView(bar(activity), eventBar);
         LinearLayout copy = column(activity);
         copy.addView(kicker);
         copy.addView(title);
-        copy.addView(when);
+        View rule = new View(activity);
+        rule.setBackgroundColor(0x33FFFFFF);
+        LinearLayout.LayoutParams ruleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(density, 1));
+        ruleParams.topMargin = dp(density, 10);
+        ruleParams.bottomMargin = dp(density, 4);
+        copy.addView(rule, ruleParams);
+        copy.addView(indiaClock(activity, density), wrap());
         event.addView(copy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         prayers = row(activity, density);
@@ -196,35 +204,40 @@ final class InfoStrip {
         header.addView(strip, underClock,
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // Under the prayer line, which is drawn over the gap below the clock block.
+        // Reminders take half the row. The month and the named days take a quarter each.
         reminderBlock = column(activity);
         reminderBlock.setFocusable(false);
-        TextView reminderKicker = text(activity, 12, 0xB3FFFFFF);
-        reminderKicker.setLetterSpacing(0.18f);
-        reminderKicker.setAllCaps(true);
-        reminderKicker.setText("Reminders");
-        reminderBlock.addView(reminderKicker);
+        reminderBlock.addView(heading(activity, "Reminders"));
         for (int i = 0; i < REMINDER_ROWS; i++) {
-            reminderLine[i] = text(activity, 18, Color.WHITE);
+            reminderLine[i] = text(activity, 13, Color.WHITE);
+            reminderLine[i].setSingleLine(false);
+            reminderLine[i].setMaxLines(2);
             LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lineParams.topMargin = dp(density, i == 0 ? 8 : 4);
             reminderBlock.addView(reminderLine[i], lineParams);
         }
-        // Beside the prayer line: reminders stay under it, and the month sits in the open space to the right.
-        reminderBlock.setPadding(0, dp(density, 92), 0, 0);
         lowerBand = new LinearLayout(activity);
         lowerBand.setOrientation(LinearLayout.HORIZONTAL);
-        lowerBand.setGravity(Gravity.TOP | Gravity.END);
+        lowerBand.setGravity(Gravity.TOP);
         lowerBand.setClipChildren(false);
         lowerBand.setFocusable(false);
-        lowerBand.addView(reminderBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2);
+        lowerBand.addView(reminderBlock, columnParams);
         monthGrid = new MonthGrid(activity, density);
-        LinearLayout.LayoutParams calendarParams = new LinearLayout.LayoutParams(
+        LinearLayout calendarColumn = column(activity);
+        calendarColumn.setGravity(Gravity.CENTER_HORIZONTAL);
+        calendarColumn.addView(heading(activity, "Calendar"));
+        LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        calendarParams.setMarginStart(dp(density, 24));
-        calendarParams.gravity = Gravity.TOP;
-        lowerBand.addView(monthGrid.view(), calendarParams);
+        gridParams.topMargin = dp(density, 8);
+        calendarColumn.addView(monthGrid.view(), gridParams);
+        LinearLayout.LayoutParams middleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        middleParams.setMarginStart(dp(density, 16));
+        lowerBand.addView(calendarColumn, middleParams);
+        LinearLayout.LayoutParams daysParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        daysParams.setMarginStart(dp(density, 16));
+        lowerBand.addView(monthGrid.notes(), daysParams);
         View relative = (View) header.getParent();
         LinearLayout page = (LinearLayout) relative.getParent();
         LinearLayout.LayoutParams bandParams = new LinearLayout.LayoutParams(
@@ -316,14 +329,13 @@ final class InfoStrip {
         metrics.setText(blank(values[5]));
         kicker.setText(blank(values[6]));
         title.setText(blank(values[7]));
-        when.setText(blank(values[8]));
         boolean hasPrayers = applyPrayers(values.length > 9 ? values[9] : "");
         applyReminders(values.length > 10 ? values[10] : "");
         monthGrid.bind(values.length > 11 ? values[11] : "");
         applyForecast(values.length > 12 ? values[12] : "");
         lowerBand.setVisibility(View.VISIBLE);
         boolean hasWeather = !blank(values[1]).isEmpty();
-        boolean hasEvent = !blank(values[6]).isEmpty() || !blank(values[7]).isEmpty() || !blank(values[8]).isEmpty();
+        boolean hasEvent = !blank(values[6]).isEmpty() || !blank(values[7]).isEmpty();
         show(hasWeather, hasEvent, hasPrayers);
     }
 
@@ -371,7 +383,7 @@ final class InfoStrip {
         forecastBlock.setVisibility(any ? View.VISIBLE : View.GONE);
     }
 
-    /** Up to five lines under the prayer line. An empty list hides the block. */
+    /** Up to five lines in the reminders column. An empty list hides the block. */
     private void applyReminders(String block) {
         String[] lines = block == null ? new String[0] : block.split("\n", -1);
         boolean any = false;
@@ -396,6 +408,58 @@ final class InfoStrip {
 
     private static String blank(String value) {
         return value == null ? "" : value;
+    }
+
+    /** India Standard Time, in the same light numerals as the clock above, with a smaller AM/PM. */
+    private static LinearLayout indiaClock(Activity activity, float density) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.BOTTOM);
+        row.setBaselineAligned(true);
+        row.setFocusable(false);
+        TextView label = text(activity, 15, 0xE6FFFFFF);
+        label.setText("India");
+        label.setTypeface(UiFont.get(activity, R.string.font_medium));
+        label.setLetterSpacing(0.02f);
+        LinearLayout.LayoutParams labelParams = wrap();
+        labelParams.bottomMargin = dp(density, 6);
+        labelParams.setMarginEnd(dp(density, 8));
+        row.addView(label, labelParams);
+        TextClock time = new TextClock(activity);
+        time.setTimeZone("Asia/Kolkata");
+        time.setFormat12Hour("h:mm");
+        time.setFormat24Hour("HH:mm");
+        time.setTextColor(Color.WHITE);
+        time.setTextSize(44);
+        time.setTypeface(UiFont.get(activity, R.string.font_light));
+        time.setLetterSpacing(-0.04f);
+        time.setFontFeatureSettings("tnum");
+        time.setIncludeFontPadding(false);
+        time.setFocusable(false);
+        row.addView(time, wrap());
+        TextClock ampm = new TextClock(activity);
+        ampm.setTimeZone("Asia/Kolkata");
+        ampm.setFormat12Hour("a");
+        ampm.setFormat24Hour("");
+        ampm.setTextColor(0xB3FFFFFF);
+        ampm.setTextSize(15);
+        ampm.setTypeface(UiFont.get(activity, R.string.font_medium));
+        ampm.setLetterSpacing(0.08f);
+        ampm.setAllCaps(true);
+        ampm.setFocusable(false);
+        LinearLayout.LayoutParams amParams = wrap();
+        amParams.setMarginStart(dp(density, 6));
+        amParams.bottomMargin = dp(density, 6);
+        row.addView(ampm, amParams);
+        return row;
+    }
+
+    private static TextView heading(Activity activity, String words) {
+        TextView view = text(activity, 12, 0xB3FFFFFF);
+        view.setLetterSpacing(0.18f);
+        view.setAllCaps(true);
+        view.setText(words);
+        return view;
     }
 
     private static TextView text(Activity activity, float sizeSp, int color) {

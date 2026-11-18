@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class Refresh {
     static final String PREFS = "home_info";
     /** Bump when the calendars change, so a TV that already cached a row fetches again. */
-    private static final int GENERATION = 8;
+    private static final int GENERATION = 9;
     private static final long FRESH_MS = 15 * 60 * 1000L;
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "home-info");
@@ -100,9 +100,9 @@ final class Refresh {
                     .putString("metrics", present.metrics);
             if (forecast != null) editor.putString("forecast", forecast);
         }
-        if (lines.top != null) editor.putString("event_kicker", lines.top);
-        if (lines.middle != null) editor.putString("event_title", lines.middle);
-        editor.putString("event_when", Present.hijriLine(now, zone));
+        editor.putString("event_kicker", Present.hijriLine(now, zone));
+        if (lines.holiday != null) editor.putString("event_title", lines.holiday);
+        editor.putString("event_when", "");
         if (prayerRaw != null) editor.putString("prayer_raw", prayerRaw).putString("prayer_day", today);
         String month = YearMonth.now(zone).toString();
         if (lines.usBody != null) {
@@ -116,14 +116,14 @@ final class Refresh {
     }
 
     /**
-     * One row per feed, in the order written in config. A feed that fails is left as it was, unless
+     * The India holiday is the only feed shown in the column. The US feed is still fetched, for the
+     * month grid, and is not written into the column. A feed that fails is left as it was, unless
      * this is the first fetch after the calendars changed, in which case the old row is cleared.
      * Generation advances only once every feed has answered, so a miss is tried again next time.
      */
     private static Lines lines(Context ctx, long now, boolean replacing) {
         String[] feeds = ctx.getResources().getStringArray(R.array.calendar_feeds);
-        String top = null;
-        String middle = null;
+        String holiday = null;
         String usBody = null;
         int answered = 0;
         int listed = 0;
@@ -144,22 +144,19 @@ final class Refresh {
             } catch (Exception ignored) {
                 line = replacing ? "" : null;
             }
-            if (i == 0) top = line;
-            else middle = line;
+            if (!"US".equalsIgnoreCase(label)) holiday = line;
         }
-        return new Lines(top, middle, listed > 0 && answered == listed, usBody);
+        return new Lines(holiday, listed > 0 && answered == listed, usBody);
     }
 
     private static final class Lines {
-        final String top;
-        final String middle;
+        final String holiday;
         final boolean complete;
         /** The US holiday feed when this refresh got one, so the month grid can mark those days. */
         final String usBody;
 
-        Lines(String top, String middle, boolean complete, String usBody) {
-            this.top = top;
-            this.middle = middle;
+        Lines(String holiday, boolean complete, String usBody) {
+            this.holiday = holiday;
             this.complete = complete;
             this.usBody = usBody;
         }

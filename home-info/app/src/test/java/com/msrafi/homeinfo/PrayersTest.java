@@ -40,6 +40,14 @@ public class PrayersTest {
     }
 
     @Test
+    public void afterIshaTheNextPrayerIsTomorrowsFajr() {
+        long evening = LocalDateTime.of(2026, 11, 16, 19, 24).atZone(ZONE).toInstant().toEpochMilli();
+        String lines = Prayers.lines(Prayers.timings(JSON), evening, ZONE, "2026-11-16", false);
+        assertEquals("Fajr\t5:32 AM · 10h 8m\tnext", lines.split("\n")[0]);
+        assertEquals("Isha\t6:02 PM\tcurrent", lines.split("\n")[5]);
+    }
+
+    @Test
     public void sunriseIsNotTheCurrentPrayer() {
         long noon = LocalDateTime.of(2026, 11, 16, 12, 0).atZone(ZONE).toInstant().toEpochMilli();
         String lines = Prayers.lines(Prayers.timings(JSON), noon, ZONE, "2026-11-16", false);

@@ -2874,9 +2874,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 String in = RaceWeekend.countdown(getResources(), GameDay.until(t, now));
                 raceHeadline.setText(t.word.isEmpty() ? in : getString(R.string.race_next, t.word, in));
             }
-            // No session times for a game: the line takes no room, so the dots sit under the countdown.
-            raceSessions.setVisibility(View.GONE);
-            racePanel.setVisibility(View.VISIBLE);
+            // The prayer countdown is in the prayer column. This headline (Iselin, then the next prayer) stays off.
+            racePanel.setVisibility(View.GONE);
         }
         showPager(turns.size(), on);
         if (turns.size() > 1 && !stopped) handler.postDelayed(turnTick, GameDay.delayToNextTurn(since, seconds));

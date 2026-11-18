@@ -34,7 +34,7 @@ public class MonthMarksTest {
         String grid = MonthMarks.grid(LocalDate.of(2026, 11, 17),
                 "11\tVeterans Day\n26\tThanksgiving Day", "2026-11");
         assertTrue(grid.startsWith("2026-11\n"));
-        assertTrue(grid.contains("\n11\tboth\tVeterans Day\t1 Jumada al-Thani"));
+        assertTrue(grid.contains("\n11\tus-start\tVeterans Day\t1 Jumada al-Thani"));
         assertTrue(grid.contains("\n26\tus\tThanksgiving Day\t"));
     }
 

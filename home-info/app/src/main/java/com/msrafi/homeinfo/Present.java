@@ -9,7 +9,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoField;
 import java.util.Locale;
 
-/** The words the home strip shows. Weather stays numeric. The three calendar rows are US, India, and the Hijri date. */
+/** The words the home strip shows. Weather stays numeric. The calendar column is the Hijri date, then the India holiday. */
 final class Present {
     final String symbol;
     final String temperature;
