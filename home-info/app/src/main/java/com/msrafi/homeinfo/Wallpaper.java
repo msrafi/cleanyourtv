@@ -56,7 +56,7 @@ final class Wallpaper {
         File tmp = new File(dir, NAME + ".tmp");
         try (FileOutputStream stream = new FileOutputStream(tmp)) {
             stream.write(jpeg.toByteArray());
-            stream.getFD().sync();
+            stream.flush();
         } catch (IOException failed) {
             tmp.delete();
             return false;
